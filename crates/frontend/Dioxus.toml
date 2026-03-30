@@ -1,0 +1,10 @@
+[application]
+name = "cloud-store-frontend"
+default_platform = "web"
+
+[web.app]
+title = "Cloud Store Frontend"
+
+[web.watcher]
+reload_html = true
+watch_path = ["src", "assets"]

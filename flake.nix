@@ -25,6 +25,9 @@
             "rustfmt"
             "clippy"
           ];
+          targets = [
+            "wasm32-unknown-unknown"
+          ];
         };
       in
       {
@@ -32,7 +35,6 @@
           packages = with pkgs; [
             rustToolchain
             cargo-nextest
-            dioxus-cli
             sqlx-cli
             openssl
             pkg-config
@@ -40,6 +42,10 @@
             redis
             just
             git
+          ];
+
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
+            pkgs.openssl
           ];
 
           shellHook = ''
