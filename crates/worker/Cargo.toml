@@ -1,0 +1,13 @@
+[package]
+name = "worker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+provider-adapter = { path = "../provider-adapter" }
+shared-domain = { path = "../shared-domain" }
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

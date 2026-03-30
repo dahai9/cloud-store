@@ -1,0 +1,9 @@
+target/
+.env
+.env.local
+.direnv/
+.DS_Store
+*.log
+.sqlx/
+data/*.db
+data/*.db-*
