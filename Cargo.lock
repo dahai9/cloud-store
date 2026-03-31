@@ -1348,8 +1348,10 @@ dependencies = [
 name = "frontend"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "dioxus",
  "gloo-net",
+ "gloo-timers",
  "serde",
  "serde_json",
  "web-sys",
@@ -4822,8 +4824,10 @@ name = "worker"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "dotenvy",
  "provider-adapter",
  "shared-domain",
+ "sqlx",
  "tokio",
  "tracing",
  "tracing-subscriber",

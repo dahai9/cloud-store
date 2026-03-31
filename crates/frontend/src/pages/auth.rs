@@ -245,7 +245,13 @@ pub fn LoginPage(source: Option<String>, plan: Option<String>) -> Element {
                                 ),
                             onclick: on_login,
                             if session().loading {
-                                "Loading..."
+                                if is_checkout_flow {
+                                    "Restoring order..."
+                                } else {
+                                    "Loading..."
+                                }
+                            } else if is_checkout_flow {
+                                "Continue Checkout"
                             } else {
                                 "Login"
                             }
@@ -259,7 +265,11 @@ pub fn LoginPage(source: Option<String>, plan: Option<String>) -> Element {
                                     AuthTransportRisk::InsecureRemote
                                 ),
                             onclick: on_register,
-                            "Register"
+                            if is_checkout_flow {
+                                "Register instead"
+                            } else {
+                                "Register"
+                            }
                         }
                     }
                 }

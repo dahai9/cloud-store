@@ -239,6 +239,10 @@ async fn main() -> anyhow::Result<()> {
             post(payment::paypal::create_order),
         )
         .route(
+            "/api/payment/paypal/retry/{invoice_id}",
+            post(payment::paypal::retry_invoice_payment),
+        )
+        .route(
             "/api/payment/paypal/return",
             get(payment::paypal::paypal_return),
         )

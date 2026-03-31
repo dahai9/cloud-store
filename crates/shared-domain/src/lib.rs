@@ -34,6 +34,7 @@ pub enum InvoiceStatus {
     Paid,
     Failed,
     Refunded,
+    Expired,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -206,6 +206,42 @@ pub async fn create_paypal_checkout(
 }
 
 #[cfg(target_arch = "wasm32")]
+pub async fn retry_paypal_invoice(
+    api_base: &str,
+    token: &str,
+    invoice_id: &str,
+) -> Result<PayPalCreateOrderResponse, String> {
+    if matches!(
+        auth_transport_risk(api_base),
+        AuthTransportRisk::InsecureRemote
+    ) {
+        return Err(
+            "当前 API 不是 HTTPS，出于安全原因已禁止发起支付。请先切换到 HTTPS。".to_string(),
+        );
+    }
+
+    let url = format!("{api_base}/api/payment/paypal/retry/{invoice_id}");
+    let resp = Request::post(&url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .send()
+        .await
+        .map_err(|e| format!("payment retry request failed: {e}"))?;
+
+    if !resp.ok() {
+        let status = resp.status();
+        let body = resp
+            .text()
+            .await
+            .unwrap_or_else(|_| "payment retry failed".to_string());
+        return Err(format!("payment retry failed ({status}): {body}"));
+    }
+
+    resp.json::<PayPalCreateOrderResponse>()
+        .await
+        .map_err(|e| format!("failed to parse retry response: {e}"))
+}
+
+#[cfg(target_arch = "wasm32")]
 async fn fetch_profile(api_base: &str, token: &str) -> Result<AuthProfileResponse, String> {
     let url = format!("{api_base}/api/auth/me");
     let resp = Request::get(&url)

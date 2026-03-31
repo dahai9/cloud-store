@@ -100,7 +100,11 @@ pub struct InvoiceItem {
     pub id: String,
     pub amount: String,
     pub status: String,
+    pub order_id: Option<String>,
+    pub external_payment_ref: Option<String>,
     pub due_at: String,
+    pub created_at: String,
+    pub paid_at: Option<String>,
 }
 
 #[cfg(target_arch = "wasm32")]

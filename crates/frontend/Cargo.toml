@@ -5,8 +5,10 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+chrono.workspace = true
 dioxus = { workspace = true, features = ["router", "web"] }
 gloo-net = { version = "0.6", features = ["json"] }
+gloo-timers = { version = "0.3", features = ["futures"] }
 serde.workspace = true
 serde_json = { workspace = true }
 web-sys = { version = "0.3", features = ["Window", "Storage"] }

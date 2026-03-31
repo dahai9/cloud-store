@@ -6,7 +6,9 @@ license.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+dotenvy.workspace = true
 provider-adapter = { path = "../provider-adapter" }
+sqlx.workspace = true
 shared-domain = { path = "../shared-domain" }
 tokio.workspace = true
 tracing.workspace = true

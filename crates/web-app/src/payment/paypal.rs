@@ -1,7 +1,7 @@
 use crate::auth;
 use crate::AppState;
 use axum::body::Bytes;
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
 use axum::http::StatusCode;
 use axum::response::Redirect;
@@ -95,11 +95,13 @@ pub async fn create_order(
     let user = auth::require_auth(&headers, &state)?;
     let plan = load_plan(&state, &payload.plan_code).await?;
 
+    ensure_inventory_available(&state).await?;
+
     let order_id = Uuid::new_v4();
     let invoice_id = Uuid::new_v4();
     let idempotency_key = Uuid::new_v4().to_string();
     let amount = plan.monthly_price.clone();
-    let due_at = Utc::now() + Duration::days(7);
+    let due_at = Utc::now() + Duration::hours(24);
 
     sqlx::query(
         "INSERT INTO orders (id, user_id, plan_id, status, total_amount, idempotency_key) VALUES (?, ?, ?, 'pending_payment', ?, ?)",
@@ -131,12 +133,16 @@ pub async fn create_order(
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to create invoice")
     })?;
 
-    let paypal_access_token = fetch_paypal_access_token(&state).await?;
-    let checkout_request = build_paypal_create_order_request(&state, &plan, &order_id, &invoice_id);
-
-    let paypal_response = create_paypal_order(&state, &paypal_access_token, checkout_request).await;
-
-    let paypal_response = match paypal_response {
+    let paypal_response = match issue_paypal_checkout(
+        &state,
+        &user.id,
+        &plan,
+        &order_id.to_string(),
+        &invoice_id.to_string(),
+        &amount,
+    )
+    .await
+    {
         Ok(response) => response,
         Err(err) => {
             mark_checkout_failed(&state, &order_id, &invoice_id).await;
@@ -144,29 +150,41 @@ pub async fn create_order(
         }
     };
 
-    let approval_url = find_paypal_approval_url(&paypal_response)
-        .ok_or((StatusCode::BAD_GATEWAY, "missing sandbox approval url"))?;
+    Ok(Json(paypal_response))
+}
 
-    sqlx::query("UPDATE invoices SET external_payment_ref = ? WHERE id = ?")
-        .bind(&paypal_response.id)
-        .bind(invoice_id.to_string())
-        .execute(&state.db)
-        .await
-        .map_err(|err| {
-            error!(error = %err, invoice_id = %invoice_id, paypal_order_id = %paypal_response.id, "failed to store paypal reference");
-            (StatusCode::INTERNAL_SERVER_ERROR, "failed to store payment reference")
-        })?;
+pub async fn retry_invoice_payment(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(invoice_id): Path<String>,
+) -> Result<Json<PaypalCreateOrderResponse>, (StatusCode, &'static str)> {
+    let user = auth::require_auth(&headers, &state)?;
+    let record = load_invoice_payment_context(&state, &invoice_id, &user).await?;
 
-    info!(order_id = %order_id, invoice_id = %invoice_id, paypal_order_id = %paypal_response.id, user_id = %user.id, "created paypal sandbox checkout");
+    if record.status.eq_ignore_ascii_case("paid") {
+        return Err((StatusCode::CONFLICT, "invoice already paid"));
+    }
 
-    Ok(Json(PaypalCreateOrderResponse {
-        order_id: order_id.to_string(),
-        invoice_id: invoice_id.to_string(),
-        paypal_order_id: paypal_response.id,
-        approval_url,
-        amount,
-        currency: "USD".to_string(),
-    }))
+    if invoice_is_overdue(&record.due_at) {
+        expire_invoice_if_needed(&state, &record.invoice_id).await?;
+        return Err((StatusCode::GONE, "invoice expired"));
+    }
+
+    if !record.status.eq_ignore_ascii_case("open") {
+        return Err((StatusCode::CONFLICT, "invoice is not payable"));
+    }
+
+    let response = issue_paypal_checkout(
+        &state,
+        &user.id,
+        &record.plan,
+        &record.order_id,
+        &record.invoice_id,
+        &record.amount,
+    )
+    .await?;
+
+    Ok(Json(response))
 }
 
 pub async fn paypal_return(
@@ -187,6 +205,12 @@ pub async fn paypal_return(
             "{}/app/balance",
             state.frontend_base_url
         )));
+    }
+
+    if invoice.status == "expired" || invoice_is_overdue(&invoice.due_at) {
+        expire_invoice_if_needed(&state, &invoice.invoice_id).await?;
+        warn!(paypal_order_id = %token, order_id = %invoice.order_id, invoice_id = %invoice.invoice_id, "paypal checkout expired before capture");
+        return Err((StatusCode::GONE, "invoice expired"));
     }
 
     let capture = capture_paypal_order(&state, &token).await?;
@@ -252,7 +276,10 @@ pub async fn webhook(
                 }));
             };
 
-            if invoice.status != "paid" {
+            if invoice.status == "expired" || invoice_is_overdue(&invoice.due_at) {
+                expire_invoice_if_needed(&state, &invoice.invoice_id).await?;
+                warn!(event_id = %event.id, event_type = %event.event_type, paypal_order_id = %paypal_order_id, order_id = %invoice.order_id, invoice_id = %invoice.invoice_id, "paypal webhook ignored because invoice expired before capture");
+            } else if invoice.status != "paid" {
                 finalize_paid_checkout(
                     &state,
                     &invoice.order_id,
@@ -274,10 +301,23 @@ pub async fn webhook(
                     .to_string()
             });
 
+            let Some(invoice) = load_invoice_by_paypal_ref(&state, &paypal_order_id).await? else {
+                warn!(event_id = %event.id, event_type = %event.event_type, paypal_order_id = %paypal_order_id, "paypal approved webhook referenced unknown checkout");
+                mark_paypal_webhook_event_processed(&state, &event.id).await?;
+                return Ok(Json(PaypalWebhookResponse {
+                    accepted: true,
+                    note: "paypal webhook referenced unknown checkout",
+                }));
+            };
+
             info!(event_id = %event.id, event_type = %event.event_type, paypal_order_id = %paypal_order_id, "paypal checkout approved");
 
             let mut should_capture = true;
-            if let Some(create_time) = event.create_time {
+            if invoice.status == "expired" || invoice_is_overdue(&invoice.due_at) {
+                expire_invoice_if_needed(&state, &invoice.invoice_id).await?;
+                warn!(paypal_order_id = %paypal_order_id, order_id = %invoice.order_id, invoice_id = %invoice.invoice_id, "paypal approved webhook skipped because invoice expired before capture");
+                should_capture = false;
+            } else if let Some(create_time) = event.create_time {
                 let age = Utc::now().signed_duration_since(create_time);
                 if age > Duration::minutes(2) {
                     warn!(
@@ -354,21 +394,22 @@ async fn load_plan(
 fn build_paypal_create_order_request(
     state: &AppState,
     plan: &CheckoutPlan,
-    order_id: &Uuid,
-    invoice_id: &Uuid,
+    order_id: &str,
+    invoice_id: &str,
+    amount: &str,
 ) -> PaypalCheckoutRequest {
     let return_url = format!("{}/api/payment/paypal/return", state.paypal_return_base_url);
     let cancel_url = format!("{}/api/payment/paypal/cancel", state.paypal_return_base_url);
     let payload = json!({
         "intent": "CAPTURE",
         "purchase_units": [{
-            "reference_id": order_id.to_string(),
-            "custom_id": order_id.to_string(),
-            "invoice_id": invoice_id.to_string(),
+            "reference_id": order_id,
+            "custom_id": order_id,
+            "invoice_id": invoice_id,
             "description": format!("{} ({})", plan.name, plan.code),
             "amount": {
                 "currency_code": "USD",
-                "value": &plan.monthly_price,
+                "value": amount,
             }
         }],
         "application_context": {
@@ -381,6 +422,165 @@ fn build_paypal_create_order_request(
     });
 
     PaypalCheckoutRequest { payload }
+}
+
+async fn issue_paypal_checkout(
+    state: &AppState,
+    user_id: &str,
+    plan: &CheckoutPlan,
+    order_id: &str,
+    invoice_id: &str,
+    amount: &str,
+) -> Result<PaypalCreateOrderResponse, (StatusCode, &'static str)> {
+    ensure_inventory_available(state).await?;
+
+    let paypal_access_token = fetch_paypal_access_token(state).await?;
+    let checkout_request =
+        build_paypal_create_order_request(state, plan, order_id, invoice_id, amount);
+
+    let paypal_response =
+        create_paypal_order(state, &paypal_access_token, checkout_request).await?;
+
+    let approval_url = find_paypal_approval_url(&paypal_response)
+        .ok_or((StatusCode::BAD_GATEWAY, "missing sandbox approval url"))?;
+
+    sqlx::query("UPDATE invoices SET external_payment_ref = ? WHERE id = ?")
+        .bind(&paypal_response.id)
+        .bind(invoice_id)
+        .execute(&state.db)
+        .await
+        .map_err(|err| {
+            error!(error = %err, invoice_id = %invoice_id, paypal_order_id = %paypal_response.id, "failed to store paypal reference");
+            (StatusCode::INTERNAL_SERVER_ERROR, "failed to store payment reference")
+        })?;
+
+    info!(order_id = %order_id, invoice_id = %invoice_id, paypal_order_id = %paypal_response.id, user_id = %user_id, "created paypal sandbox checkout");
+
+    Ok(PaypalCreateOrderResponse {
+        order_id: order_id.to_string(),
+        invoice_id: invoice_id.to_string(),
+        paypal_order_id: paypal_response.id,
+        approval_url,
+        amount: amount.to_string(),
+        currency: "USD".to_string(),
+    })
+}
+
+async fn ensure_inventory_available(state: &AppState) -> Result<(), (StatusCode, &'static str)> {
+    let available_capacity = sqlx::query_scalar::<_, i64>(
+        "SELECT COALESCE(SUM(total_capacity - used_capacity), 0) FROM nodes WHERE active = 1",
+    )
+    .fetch_one(&state.db)
+    .await
+    .map_err(|err| {
+        error!(error = %err, "failed to query inventory capacity");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to check inventory",
+        )
+    })?;
+
+    if available_capacity <= 0 {
+        warn!(
+            available_capacity = available_capacity,
+            "inventory unavailable for new payment"
+        );
+        return Err((StatusCode::CONFLICT, "inventory unavailable"));
+    }
+
+    Ok(())
+}
+
+#[derive(Clone)]
+struct InvoicePaymentContext {
+    order_id: String,
+    invoice_id: String,
+    status: String,
+    due_at: String,
+    amount: String,
+    plan: CheckoutPlan,
+}
+
+async fn load_invoice_payment_context(
+    state: &AppState,
+    invoice_id: &str,
+    user: &auth::AuthUser,
+) -> Result<InvoicePaymentContext, (StatusCode, &'static str)> {
+    let record = if user.role == "admin" {
+        sqlx::query_as::<_, (String, String, String, String, String, String, String, String, String, String)>(
+            "SELECT invoices.order_id, invoices.id, invoices.status, invoices.due_at, CAST(invoices.amount AS TEXT), nat_plans.id, nat_plans.code, nat_plans.name, CAST(nat_plans.monthly_price AS TEXT), invoices.user_id FROM invoices INNER JOIN orders ON orders.id = invoices.order_id INNER JOIN nat_plans ON nat_plans.id = orders.plan_id WHERE invoices.id = ? LIMIT 1",
+        )
+        .bind(invoice_id)
+        .fetch_optional(&state.db)
+        .await
+    } else {
+        sqlx::query_as::<_, (String, String, String, String, String, String, String, String, String, String)>(
+            "SELECT invoices.order_id, invoices.id, invoices.status, invoices.due_at, CAST(invoices.amount AS TEXT), nat_plans.id, nat_plans.code, nat_plans.name, CAST(nat_plans.monthly_price AS TEXT), invoices.user_id FROM invoices INNER JOIN orders ON orders.id = invoices.order_id INNER JOIN nat_plans ON nat_plans.id = orders.plan_id WHERE invoices.id = ? AND invoices.user_id = ? LIMIT 1",
+        )
+        .bind(invoice_id)
+        .bind(&user.id)
+        .fetch_optional(&state.db)
+        .await
+    }
+    .map_err(|err| {
+        error!(error = %err, invoice_id = %invoice_id, user_id = %user.id, "failed to load invoice payment context");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to load invoice")
+    })?;
+
+    record
+        .map(
+            |(
+                order_id,
+                invoice_id,
+                status,
+                due_at,
+                amount,
+                plan_id,
+                code,
+                name,
+                monthly_price,
+                _owner_id,
+            )| {
+                InvoicePaymentContext {
+                    order_id,
+                    invoice_id,
+                    status,
+                    due_at,
+                    amount,
+                    plan: CheckoutPlan {
+                        id: plan_id,
+                        code,
+                        name,
+                        monthly_price,
+                    },
+                }
+            },
+        )
+        .ok_or((StatusCode::NOT_FOUND, "invoice not found"))
+}
+
+async fn expire_invoice_if_needed(
+    state: &AppState,
+    invoice_id: &str,
+) -> Result<(), (StatusCode, &'static str)> {
+    sqlx::query(
+        "UPDATE invoices SET status = 'expired' WHERE id = ? AND status = 'open' AND datetime(due_at) <= datetime('now')",
+    )
+    .bind(invoice_id)
+    .execute(&state.db)
+    .await
+    .map_err(|err| {
+        error!(error = %err, invoice_id = %invoice_id, "failed to expire invoice");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to expire invoice")
+    })?;
+
+    Ok(())
+}
+
+fn invoice_is_overdue(due_at: &str) -> bool {
+    chrono::DateTime::parse_from_rfc3339(due_at)
+        .map(|timestamp| timestamp.with_timezone(&Utc) <= Utc::now())
+        .unwrap_or(false)
 }
 
 async fn fetch_paypal_access_token(state: &AppState) -> Result<String, (StatusCode, &'static str)> {
@@ -512,23 +712,25 @@ struct InvoiceCheckoutRecord {
     order_id: String,
     invoice_id: String,
     status: String,
+    due_at: String,
 }
 
 async fn load_invoice_by_paypal_ref(
     state: &AppState,
     paypal_order_id: &str,
 ) -> Result<Option<InvoiceCheckoutRecord>, (StatusCode, &'static str)> {
-    sqlx::query_as::<_, (String, String, String)>(
-        "SELECT order_id, id, status FROM invoices WHERE external_payment_ref = ? LIMIT 1",
+    sqlx::query_as::<_, (String, String, String, String)>(
+        "SELECT order_id, id, status, due_at FROM invoices WHERE external_payment_ref = ? LIMIT 1",
     )
     .bind(paypal_order_id)
     .fetch_optional(&state.db)
     .await
     .map(|record| {
-        record.map(|(order_id, invoice_id, status)| InvoiceCheckoutRecord {
+        record.map(|(order_id, invoice_id, status, due_at)| InvoiceCheckoutRecord {
             order_id,
             invoice_id,
             status,
+            due_at,
         })
     })
     .map_err(|err| {
