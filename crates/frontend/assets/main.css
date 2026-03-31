@@ -115,6 +115,131 @@ body::before {
   max-width: 1080px;
 }
 
+.login-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 1.05fr) minmax(340px, 0.95fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.login-hero {
+  padding: 22px;
+  min-height: 100%;
+}
+
+.panel-soft {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(244, 248, 255, 0.92) 100%),
+    var(--card);
+  border: 1px solid rgba(215, 226, 248, 0.9);
+  border-radius: 18px;
+  box-shadow: 0 18px 40px rgba(17, 35, 88, 0.08);
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #eef3ff 0%, #e3ecff 100%);
+  color: #31508d;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.login-hero h2 {
+  margin: 14px 0 10px;
+  font-size: 34px;
+  line-height: 1.1;
+  letter-spacing: -0.04em;
+}
+
+.login-hero p {
+  color: var(--muted);
+  max-width: 44ch;
+}
+
+.login-callout {
+  margin-top: 18px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(31, 87, 204, 0.06);
+  border: 1px solid rgba(31, 87, 204, 0.12);
+}
+
+.login-callout strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #173f91;
+}
+
+.login-callout p {
+  margin: 0;
+  color: #5470a5;
+}
+
+.login-card {
+  padding: 24px;
+  border-radius: 20px;
+}
+
+.login-card h3 {
+  margin-top: 0;
+  font-size: 24px;
+}
+
+.form-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.text-input {
+  width: 100%;
+  border: 1px solid #d6e0f4;
+  border-radius: 12px;
+  height: 42px;
+  padding: 0 12px;
+  background: linear-gradient(180deg, #fff 0%, #fbfdff 100%);
+  color: var(--text);
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.text-input::placeholder {
+  color: #9aa6bf;
+}
+
+.text-input:hover,
+.text-input:focus {
+  border-color: #9fb6ee;
+  box-shadow: 0 0 0 4px rgba(31, 87, 204, 0.08);
+  outline: none;
+}
+
+.login-actions {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.error-notice {
+  border-color: rgba(228, 99, 99, 0.28);
+  background: #fff1f1;
+  color: #9c2d2d;
+}
+
+@media (max-width: 900px) {
+  .login-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .login-hero h2 {
+    font-size: 28px;
+  }
+}
+
 .hero,
 .pay-preview,
 .checkout-card,
@@ -125,8 +250,10 @@ body::before {
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 14px;
-  box-shadow: 0 16px 34px rgba(17, 35, 88, 0.06);
+  box-shadow: 0 10px 24px rgba(17, 35, 88, 0.05);
   backdrop-filter: blur(8px);
+  position: relative;
+  isolation: isolate;
 }
 
 .hero,
@@ -182,7 +309,6 @@ body::before {
 .product-card {
   padding: 16px;
   transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
-  position: relative;
   overflow: hidden;
 }
 
@@ -193,11 +319,13 @@ body::before {
 .table-card::after {
   content: "";
   position: absolute;
-  inset: 0;
-  background: linear-gradient(120deg, transparent 0%, rgba(255, 255, 255, 0.18) 50%, transparent 100%);
-  transform: translateX(-120%);
-  transition: transform 500ms ease;
+  inset: -1px;
+  background: linear-gradient(120deg, transparent 0%, rgba(255, 255, 255, 0.24) 48%, transparent 100%);
+  transform: translateX(-140%);
+  transition: transform 420ms ease, opacity 220ms ease;
   pointer-events: none;
+  opacity: 0;
+  z-index: 0;
 }
 
 .product-card:hover::after,
@@ -205,7 +333,17 @@ body::before {
 .checkout-card:hover::after,
 .balance-card:hover::after,
 .table-card:hover::after {
-  transform: translateX(120%);
+  transform: translateX(140%);
+  opacity: 1;
+}
+
+.product-card > *,
+.panel > *,
+.checkout-card > *,
+.balance-card > *,
+.table-card > * {
+  position: relative;
+  z-index: 1;
 }
 
 .product-card:hover,
@@ -307,7 +445,8 @@ body::before {
   background: linear-gradient(180deg, var(--sidebar), var(--sidebar-dark));
   color: #dce8ff;
   padding: 22px 14px;
-  box-shadow: 18px 0 40px rgba(20, 67, 158, 0.16);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 8px 0 20px rgba(20, 67, 158, 0.08);
 }
 
 .logo {
@@ -427,7 +566,7 @@ body::before {
   border: 1px solid var(--line);
   border-radius: 14px;
   padding: 18px;
-  box-shadow: 0 16px 34px rgba(17, 35, 88, 0.06);
+  box-shadow: 0 10px 24px rgba(17, 35, 88, 0.05);
   position: relative;
   overflow: hidden;
 }
@@ -441,7 +580,7 @@ body::before {
   border: 1px solid var(--line);
   border-radius: 14px;
   padding: 18px;
-  box-shadow: 0 12px 24px rgba(17, 35, 88, 0.04);
+  box-shadow: 0 8px 18px rgba(17, 35, 88, 0.04);
   margin-bottom: 14px;
 }
 

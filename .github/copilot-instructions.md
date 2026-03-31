@@ -11,12 +11,43 @@
 ## Architecture
 
 - Workspace layout:
-  - `crates/web-app`: Dioxus + Axum app layer (routes, API handlers, UI entrypoints)
-  - `crates/shared-domain`: shared business models and enums used across services
-  - `crates/provider-adapter`: provider abstraction for VPS lifecycle operations
-  - `crates/worker`: background processing for provisioning and renewals
+  - `crates/frontend`: Dioxus WebAssembly frontend app. This owns routing, page composition, client session state, and browser-only UX.
+  - `crates/web-app`: Axum backend API layer. This owns HTTP routes, auth, payment/webhook handling, SQLite persistence, and server-side orchestration.
+  - `crates/shared-domain`: shared business models, enums, and value types that need to stay consistent across services.
+  - `crates/provider-adapter`: provider abstraction for VPS lifecycle operations and any provider-specific provisioning logic.
+  - `crates/worker`: background processing for provisioning, renewals, and other deferred jobs.
 - Database target is SQLite for low-memory runtime (`DATABASE_URL=sqlite://data/cloud_store.db`).
 - Redis is optional runtime support and is memory-capped in compose.
+- Runtime topology:
+  - Frontend usually runs on `http://127.0.0.1:8080`.
+  - Backend API usually runs on `http://127.0.0.1:8081`.
+  - The frontend talks to the backend through `api_base` in client session state.
+  - PayPal sandbox callbacks return to the backend first, then the backend redirects back to the frontend after capture/finalization.
+- Frontend entrypoints:
+  - `crates/frontend/src/main.rs` launches `pages::App` on wasm32.
+  - `crates/frontend/src/pages/mod.rs` wires routing and global session context.
+  - `crates/frontend/src/models.rs` is the source of truth for `Route`, `SessionState`, and the product plan catalog.
+  - `crates/frontend/src/pages/public.rs` owns the public storefront and order flow.
+  - `crates/frontend/src/pages/auth.rs` owns login-related UX.
+  - `crates/frontend/src/pages/dashboard.rs` owns authenticated dashboard pages such as profile, services, tickets, and balance.
+- Backend entrypoints:
+  - `crates/web-app/src/main.rs` boots Axum, loads env vars, opens SQLite, runs migrations, and binds the listener.
+  - `crates/web-app/src/routes.rs` defines the portal route surface used by the backend.
+  - `crates/web-app/src/auth.rs` contains session and permission checks.
+  - `crates/web-app/src/billing.rs` and `crates/web-app/src/tickets.rs` handle core business APIs.
+  - `crates/web-app/src/payment/paypal.rs` contains the PayPal checkout, return, capture, and webhook flow.
+- Request flow summary:
+  1. Anonymous user browses `StorefrontPage` and selects a plan.
+  2. Login stores session state on the client, then the frontend fetches the authenticated bundle.
+  3. Checkout creates an internal order and invoice first, then creates a PayPal order.
+  4. PayPal approval can arrive through the return URL or webhook, and both paths are written to be idempotent.
+  5. A successful payment updates local order/invoice state, then redirects the browser back to the frontend balance page.
+- When changing behavior, prefer the narrowest file that owns the concern:
+  - Routing and page state: `crates/frontend/src/models.rs` and `crates/frontend/src/pages/*`.
+  - Client API calls: `crates/frontend/src/api.rs`.
+  - Shared UI/session types: `crates/frontend/src/models.rs`.
+  - Auth, DB, or payment flow: `crates/web-app/src/*.rs`.
+  - Cross-crate domain types: `crates/shared-domain`.
 
 ## Build and Test
 
@@ -25,7 +56,9 @@
   - `cp .env.example .env`
   - `mkdir -p data`
 - Core commands:
-  - `just check` for workspace compile checks
+  - `just check` for workspace compile checks (append `-p frontend --target wasm32-unknown-unknown` for frontend)
+  - `just serve-api` to run the Axum backend
+  - `just serve-frontend` to run the Dioxus frontend
   - `just fmt` for formatting
   - `just clippy` for lints
   - `just up` to start optional local services
