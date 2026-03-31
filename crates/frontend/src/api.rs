@@ -1,0 +1,292 @@
+#[cfg(target_arch = "wasm32")]
+use crate::models::{
+    AuthPayload, AuthProfileResponse, AuthTokenResponse, AuthTransportRisk, InvoiceItem,
+    PayPalCreateOrderRequest, PayPalCreateOrderResponse, SessionState, TicketItem,
+};
+#[cfg(target_arch = "wasm32")]
+use gloo_net::http::Request;
+#[cfg(target_arch = "wasm32")]
+use web_sys::window;
+
+#[cfg(target_arch = "wasm32")]
+const AUTH_TOKEN_KEY: &str = "cloud_store.auth.token";
+
+#[cfg(target_arch = "wasm32")]
+const AUTH_PROFILE_KEY: &str = "cloud_store.auth.profile";
+
+#[cfg(target_arch = "wasm32")]
+pub fn default_api_base() -> String {
+    option_env!("API_BASE_URL")
+        .unwrap_or("http://127.0.0.1:8081")
+        .to_string()
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn auth_transport_risk(api_base: &str) -> AuthTransportRisk {
+    if api_base.starts_with("https://") {
+        AuthTransportRisk::Secure
+    } else if api_base.contains("127.0.0.1") || api_base.contains("localhost") {
+        AuthTransportRisk::LoopbackDev
+    } else {
+        AuthTransportRisk::InsecureRemote
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn auth_transport_notice(api_base: &str) -> Option<&'static str> {
+    match auth_transport_risk(api_base) {
+        AuthTransportRisk::Secure => None,
+        AuthTransportRisk::LoopbackDev => {
+            Some("当前是本地开发地址，注册/登录请求仍会通过 HTTP 发送。生产环境请改成 HTTPS。")
+        }
+        AuthTransportRisk::InsecureRemote => {
+            Some("当前 API 不是 HTTPS，出于安全原因已禁止提交账号信息。请先切换到 HTTPS。")
+        }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn load_initial_session() -> SessionState {
+    let mut initial = SessionState::new(default_api_base());
+
+    if let Some((token, profile)) = load_persisted_session() {
+        initial.token = Some(token);
+        initial.profile = Some(profile);
+    }
+
+    initial
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn persist_authenticated_session(session: &SessionState) {
+    let Some(storage) = browser_storage() else {
+        return;
+    };
+
+    if let Some(token) = &session.token {
+        let _ = storage.set_item(AUTH_TOKEN_KEY, token);
+    }
+
+    if let Some(profile) = &session.profile {
+        if let Ok(serialized) = serde_json::to_string(profile) {
+            let _ = storage.set_item(AUTH_PROFILE_KEY, &serialized);
+        }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn clear_persisted_session() {
+    let Some(storage) = browser_storage() else {
+        return;
+    };
+
+    let _ = storage.remove_item(AUTH_TOKEN_KEY);
+    let _ = storage.remove_item(AUTH_PROFILE_KEY);
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn authenticate_and_load(
+    api_base: &str,
+    endpoint: &str,
+    email: &str,
+    password: &str,
+) -> Result<BootstrapBundle, String> {
+    if email.trim().is_empty() || password.trim().is_empty() {
+        return Err("email and password are required".to_string());
+    }
+
+    if matches!(
+        auth_transport_risk(api_base),
+        AuthTransportRisk::InsecureRemote
+    ) {
+        return Err(
+            "当前 API 不是 HTTPS，出于安全原因已禁止提交账号信息。请先切换到 HTTPS。".to_string(),
+        );
+    }
+
+    let auth = AuthPayload {
+        email: email.trim().to_string(),
+        password: password.to_string(),
+    };
+
+    let url = format!("{api_base}/api/auth/{endpoint}");
+    let resp = Request::post(&url)
+        .header("Content-Type", "application/json")
+        .json(&auth)
+        .map_err(|e| format!("failed to build auth request: {e}"))?
+        .send()
+        .await
+        .map_err(|e| format!("request failed: {e}"))?;
+
+    if !resp.ok() {
+        let status = resp.status();
+        let body = resp
+            .text()
+            .await
+            .unwrap_or_else(|_| "auth failed".to_string());
+        return Err(format!("auth failed ({status}): {body}"));
+    }
+
+    let auth_result = resp
+        .json::<AuthTokenResponse>()
+        .await
+        .map_err(|e| format!("failed to parse auth response: {e}"))?;
+
+    let token = auth_result.token;
+    let profile = fetch_profile(api_base, &token).await?;
+    let invoices = fetch_invoices(api_base, &token).await?;
+    let tickets = fetch_tickets(api_base, &token).await?;
+
+    Ok(BootstrapBundle {
+        token,
+        profile,
+        invoices,
+        tickets,
+    })
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn load_authenticated_bundle(
+    api_base: &str,
+    token: &str,
+) -> Result<BootstrapBundle, String> {
+    let profile = fetch_profile(api_base, token).await?;
+    let invoices = fetch_invoices(api_base, token).await?;
+    let tickets = fetch_tickets(api_base, token).await?;
+
+    Ok(BootstrapBundle {
+        token: token.to_string(),
+        profile,
+        invoices,
+        tickets,
+    })
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn create_paypal_checkout(
+    api_base: &str,
+    token: &str,
+    plan_code: &str,
+) -> Result<PayPalCreateOrderResponse, String> {
+    if matches!(
+        auth_transport_risk(api_base),
+        AuthTransportRisk::InsecureRemote
+    ) {
+        return Err(
+            "当前 API 不是 HTTPS，出于安全原因已禁止发起支付。请先切换到 HTTPS。".to_string(),
+        );
+    }
+
+    let payload = PayPalCreateOrderRequest {
+        plan_code: plan_code.to_string(),
+    };
+
+    let url = format!("{api_base}/api/payment/paypal/create");
+    let resp = Request::post(&url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .header("Content-Type", "application/json")
+        .json(&payload)
+        .map_err(|e| format!("failed to build payment request: {e}"))?
+        .send()
+        .await
+        .map_err(|e| format!("payment request failed: {e}"))?;
+
+    if !resp.ok() {
+        let status = resp.status();
+        let body = resp
+            .text()
+            .await
+            .unwrap_or_else(|_| "payment failed".to_string());
+        return Err(format!("payment failed ({status}): {body}"));
+    }
+
+    resp.json::<PayPalCreateOrderResponse>()
+        .await
+        .map_err(|e| format!("failed to parse payment response: {e}"))
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn fetch_profile(api_base: &str, token: &str) -> Result<AuthProfileResponse, String> {
+    let url = format!("{api_base}/api/auth/me");
+    let resp = Request::get(&url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .send()
+        .await
+        .map_err(|e| format!("failed to load profile: {e}"))?;
+
+    if !resp.ok() {
+        return Err(format!(
+            "profile request failed with status {}",
+            resp.status()
+        ));
+    }
+
+    resp.json::<AuthProfileResponse>()
+        .await
+        .map_err(|e| format!("failed to parse profile response: {e}"))
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn fetch_invoices(api_base: &str, token: &str) -> Result<Vec<InvoiceItem>, String> {
+    let url = format!("{api_base}/api/invoices");
+    let resp = Request::get(&url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .send()
+        .await
+        .map_err(|e| format!("failed to load invoices: {e}"))?;
+
+    if !resp.ok() {
+        return Err(format!(
+            "invoice request failed with status {}",
+            resp.status()
+        ));
+    }
+
+    resp.json::<Vec<InvoiceItem>>()
+        .await
+        .map_err(|e| format!("failed to parse invoices response: {e}"))
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn fetch_tickets(api_base: &str, token: &str) -> Result<Vec<TicketItem>, String> {
+    let url = format!("{api_base}/api/tickets");
+    let resp = Request::get(&url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .send()
+        .await
+        .map_err(|e| format!("failed to load tickets: {e}"))?;
+
+    if !resp.ok() {
+        return Err(format!(
+            "ticket request failed with status {}",
+            resp.status()
+        ));
+    }
+
+    resp.json::<Vec<TicketItem>>()
+        .await
+        .map_err(|e| format!("failed to parse tickets response: {e}"))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn load_persisted_session() -> Option<(String, AuthProfileResponse)> {
+    let storage = browser_storage()?;
+    let token = storage.get_item(AUTH_TOKEN_KEY).ok().flatten()?;
+    let profile = storage.get_item(AUTH_PROFILE_KEY).ok().flatten()?;
+    let profile = serde_json::from_str::<AuthProfileResponse>(&profile).ok()?;
+
+    Some((token, profile))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn browser_storage() -> Option<web_sys::Storage> {
+    window()?.local_storage().ok().flatten()
+}
+
+#[cfg(target_arch = "wasm32")]
+pub struct BootstrapBundle {
+    pub token: String,
+    pub profile: AuthProfileResponse,
+    pub invoices: Vec<InvoiceItem>,
+    pub tickets: Vec<TicketItem>,
+}

@@ -18,7 +18,11 @@
       system:
       let
         overlays = [ (import rust-overlay) ];
-        pkgs = import nixpkgs { inherit system overlays; };
+        lib = nixpkgs.lib;
+        pkgs = import nixpkgs {
+          inherit system overlays;
+          config.allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) [ "ngrok" ];
+        };
         rustToolchain = pkgs.rust-bin.stable.latest.default.override {
           extensions = [
             "rust-src"
@@ -40,6 +44,7 @@
             pkg-config
             sqlite
             redis
+            ngrok
             just
             git
           ];

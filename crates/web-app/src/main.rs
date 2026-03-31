@@ -25,6 +25,13 @@ struct HealthResponse {
 pub(crate) struct AppState {
     pub(crate) db: SqlitePool,
     pub(crate) session_secret: String,
+    pub(crate) paypal_client_id: String,
+    pub(crate) paypal_client_secret: String,
+    pub(crate) paypal_webhook_id: String,
+    pub(crate) paypal_base_url: String,
+    pub(crate) paypal_return_base_url: String,
+    pub(crate) frontend_base_url: String,
+    pub(crate) http_client: reqwest::Client,
 }
 
 async fn health() -> Json<HealthResponse> {
@@ -146,6 +153,14 @@ fn read_bind_port() -> u16 {
         .unwrap_or(8081)
 }
 
+fn read_env_or_default(name: &str, default_value: &str) -> String {
+    std::env::var(name).unwrap_or_else(|_| default_value.to_string())
+}
+
+fn read_required_env_trimmed(name: &str) -> anyhow::Result<String> {
+    Ok(require_env(name)?.trim().to_string())
+}
+
 async fn bind_listener(host: &str, preferred_port: u16) -> anyhow::Result<tokio::net::TcpListener> {
     let preferred = format!("{host}:{preferred_port}");
 
@@ -178,9 +193,15 @@ async fn main() -> anyhow::Result<()> {
     let _ = dotenvy::dotenv();
 
     let database_url = normalize_database_url(&require_env("DATABASE_URL")?)?;
-    let _ = require_env("PAYPAL_CLIENT_ID")?;
-    let _ = require_env("PAYPAL_CLIENT_SECRET")?;
     let session_secret = require_env("SESSION_SECRET")?;
+    let paypal_client_id = read_required_env_trimmed("PAYPAL_CLIENT_ID")?;
+    let paypal_client_secret = read_required_env_trimmed("PAYPAL_CLIENT_SECRET")?;
+    let paypal_webhook_id = read_required_env_trimmed("PAYPAL_WEBHOOK_ID")?;
+    let paypal_base_url =
+        read_env_or_default("PAYPAL_BASE_URL", "https://api-m.sandbox.paypal.com");
+    let paypal_return_base_url =
+        read_env_or_default("PAYPAL_RETURN_BASE_URL", "http://127.0.0.1:8081");
+    let frontend_base_url = read_env_or_default("FRONTEND_BASE_URL", "http://127.0.0.1:8080");
     let bind_host = read_bind_host();
     let bind_port = read_bind_port();
 
@@ -195,7 +216,17 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("failed to run database migrations")?;
 
-    let app_state = AppState { db, session_secret };
+    let app_state = AppState {
+        db,
+        session_secret,
+        paypal_client_id,
+        paypal_client_secret,
+        paypal_webhook_id,
+        paypal_base_url,
+        paypal_return_base_url,
+        frontend_base_url,
+        http_client: reqwest::Client::new(),
+    };
 
     let router = Router::new()
         .route("/api/health", get(health))
@@ -205,11 +236,19 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/auth/me", get(auth::me))
         .route(
             "/api/payment/paypal/create",
-            get(payment::paypal::create_order),
+            post(payment::paypal::create_order),
+        )
+        .route(
+            "/api/payment/paypal/return",
+            get(payment::paypal::paypal_return),
+        )
+        .route(
+            "/api/payment/paypal/cancel",
+            get(payment::paypal::paypal_cancel),
         )
         .route(
             "/api/payment/paypal/webhook",
-            get(payment::paypal::webhook_stub),
+            post(payment::paypal::webhook),
         )
         .route("/api/tickets", get(tickets::list_tickets))
         .route("/api/invoices", get(billing::list_invoices))
