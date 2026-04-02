@@ -3,12 +3,14 @@ use crate::models::{Route, AdminSessionState};
 
 mod overview;
 mod nodes;
+mod instances;
 mod plans;
 mod guests;
 mod tickets;
 
 pub use overview::OverviewPage;
 pub use nodes::NodesPage;
+pub use instances::InstancesPage;
 pub use plans::PlansPage;
 pub use guests::GuestsPage;
 pub use tickets::TicketsPage;
@@ -56,6 +58,7 @@ pub fn DashboardLayout() -> Element {
                 nav { class: "menu",
                     Link { class: "menu-item", active_class: "active", to: Route::OverviewPage {}, "Overview" }
                     Link { class: "menu-item", active_class: "active", to: Route::NodesPage {}, "Nodes" }
+                    Link { class: "menu-item", active_class: "active", to: Route::InstancesPage {}, "Instances" }
                     Link { class: "menu-item", active_class: "active", to: Route::PlansPage {}, "Products" }
                     Link { class: "menu-item", active_class: "active", to: Route::GuestsPage {}, "Guests" }
                     Link { class: "menu-item", active_class: "active", to: Route::TicketsPage {}, "Tickets" }

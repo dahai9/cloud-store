@@ -1,5 +1,6 @@
 use crate::models::{
-    AuthPayload, AuthProfileResponse, AuthTokenResponse, AuthTransportRisk, InvoiceItem,
+    ActionRequest, AuthPayload, AuthProfileResponse, AuthTokenResponse, AuthTransportRisk,
+    ConsoleToken, InstanceAction, InstanceItem, InstanceMetrics, InvoiceItem,
     PayPalCreateOrderRequest, PayPalCreateOrderResponse, SessionState, TicketItem,
 };
 
@@ -130,12 +131,14 @@ pub async fn authenticate_and_load(
     let profile = fetch_profile(api_base, &token).await?;
     let invoices = fetch_invoices(api_base, &token).await?;
     let tickets = fetch_tickets(api_base, &token).await?;
+    let instances = fetch_instances(api_base, &token).await?;
 
     Ok(BootstrapBundle {
         token,
         profile,
         invoices,
         tickets,
+        instances,
     })
 }
 
@@ -146,12 +149,14 @@ pub async fn load_authenticated_bundle(
     let profile = fetch_profile(api_base, token).await?;
     let invoices = fetch_invoices(api_base, token).await?;
     let tickets = fetch_tickets(api_base, token).await?;
+    let instances = fetch_instances(api_base, token).await?;
 
     Ok(BootstrapBundle {
         token: token.to_string(),
         profile,
         invoices,
         tickets,
+        instances,
     })
 }
 
@@ -295,6 +300,136 @@ async fn fetch_tickets(api_base: &str, token: &str) -> Result<Vec<TicketItem>, S
         .map_err(|e| format!("failed to parse tickets response: {e}"))
 }
 
+pub async fn fetch_instances(api_base: &str, token: &str) -> Result<Vec<InstanceItem>, String> {
+    let client = Client::new();
+    let url = format!("{api_base}/api/instances");
+    let resp = client
+        .get(&url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .send()
+        .await
+        .map_err(|e| format!("failed to load instances: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!(
+            "instances request failed with status {}",
+            resp.status()
+        ));
+    }
+
+    resp.json::<Vec<InstanceItem>>()
+        .await
+        .map_err(|e| format!("failed to parse instances response: {e}"))
+}
+
+pub async fn fetch_instance_details(
+    api_base: &str,
+    token: &str,
+    id: &str,
+) -> Result<InstanceItem, String> {
+    let client = Client::new();
+    let url = format!("{api_base}/api/instances/{id}");
+    let resp = client
+        .get(&url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .send()
+        .await
+        .map_err(|e| format!("failed to load instance details: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!(
+            "instance details request failed with status {}",
+            resp.status()
+        ));
+    }
+
+    resp.json::<InstanceItem>()
+        .await
+        .map_err(|e| format!("failed to parse instance details response: {e}"))
+}
+
+pub async fn perform_instance_action(
+    api_base: &str,
+    token: &str,
+    id: &str,
+    action: InstanceAction,
+) -> Result<(), String> {
+    let client = Client::new();
+    let url = format!("{api_base}/api/instances/{id}/action");
+    let payload = ActionRequest { action };
+
+    let resp = client
+        .post(&url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("action request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp
+            .text()
+            .await
+            .unwrap_or_else(|_| "action failed".to_string());
+        return Err(format!("action failed ({status}): {body}"));
+    }
+
+    Ok(())
+}
+
+pub async fn fetch_instance_metrics(
+    api_base: &str,
+    token: &str,
+    id: &str,
+) -> Result<InstanceMetrics, String> {
+    let client = Client::new();
+    let url = format!("{api_base}/api/instances/{id}/metrics");
+    let resp = client
+        .get(&url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .send()
+        .await
+        .map_err(|e| format!("failed to load metrics: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!(
+            "metrics request failed with status {}",
+            resp.status()
+        ));
+    }
+
+    resp.json::<InstanceMetrics>()
+        .await
+        .map_err(|e| format!("failed to parse metrics response: {e}"))
+}
+
+pub async fn fetch_instance_console(
+    api_base: &str,
+    token: &str,
+    id: &str,
+) -> Result<ConsoleToken, String> {
+    let client = Client::new();
+    let url = format!("{api_base}/api/instances/{id}/console");
+    let resp = client
+        .get(&url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .send()
+        .await
+        .map_err(|e| format!("failed to load console token: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!(
+            "console token request failed with status {}",
+            resp.status()
+        ));
+    }
+
+    resp.json::<ConsoleToken>()
+        .await
+        .map_err(|e| format!("failed to parse console token response: {e}"))
+}
+
 fn load_persisted_session() -> Option<(String, AuthProfileResponse)> {
     #[cfg(target_arch = "wasm32")]
     {
@@ -316,4 +451,5 @@ pub struct BootstrapBundle {
     pub profile: AuthProfileResponse,
     pub invoices: Vec<InvoiceItem>,
     pub tickets: Vec<TicketItem>,
+    pub instances: Vec<InstanceItem>,
 }

@@ -36,6 +36,54 @@ pub struct GuestUpdateRequest {
     pub disabled: bool,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct NodeItem {
+    pub id: String,
+    pub name: String,
+    pub region: String,
+    pub cpu_cores_total: i64,
+    pub memory_mb_total: i64,
+    pub storage_gb_total: i64,
+    pub cpu_cores_used: i64,
+    pub memory_mb_used: i64,
+    pub storage_gb_used: i64,
+    pub api_endpoint: Option<String>,
+    pub api_token: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct NodeCreateRequest {
+    pub name: String,
+    pub region: String,
+    pub cpu_cores_total: i64,
+    pub memory_mb_total: i64,
+    pub storage_gb_total: i64,
+    pub api_endpoint: Option<String>,
+    pub api_token: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct NodeUpdateRequest {
+    pub name: Option<String>,
+    pub region: Option<String>,
+    pub cpu_cores_total: Option<i64>,
+    pub memory_mb_total: Option<i64>,
+    pub storage_gb_total: Option<i64>,
+    pub api_endpoint: Option<String>,
+    pub api_token: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct InstanceItem {
+    pub id: String,
+    pub user_email: String,
+    pub node_name: String,
+    pub plan_name: String,
+    pub status: String,
+    pub os_template: String,
+    pub created_at: String,
+}
+
 pub async fn list_plans(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -201,4 +249,190 @@ pub async fn update_guest(
         disabled: payload.disabled,
         created_at: target.4,
     }))
+}
+
+pub async fn list_nodes(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<NodeItem>>, (StatusCode, &'static str)> {
+    let _ = auth::require_admin(&headers, &state).await?;
+
+    let rows = sqlx::query_as::<_, (String, String, String, i64, i64, i64, i64, i64, i64, Option<String>, Option<String>)>(
+        "SELECT id, name, region, cpu_cores_total, memory_mb_total, storage_gb_total, cpu_cores_used, memory_mb_used, storage_gb_used, api_endpoint, api_token FROM nodes ORDER BY created_at DESC LIMIT 100",
+    )
+    .fetch_all(&state.db)
+    .await
+    .map_err(|err| {
+        error!(error = %err, "failed to list nodes");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to load nodes")
+    })?;
+
+    let items = rows
+        .into_iter()
+        .map(
+            |(id, name, region, cpu_cores_total, memory_mb_total, storage_gb_total, cpu_cores_used, memory_mb_used, storage_gb_used, api_endpoint, api_token)| NodeItem {
+                id,
+                name,
+                region,
+                cpu_cores_total,
+                memory_mb_total,
+                storage_gb_total,
+                cpu_cores_used,
+                memory_mb_used,
+                storage_gb_used,
+                api_endpoint,
+                api_token,
+            },
+        )
+        .collect();
+
+    Ok(Json(items))
+}
+
+pub async fn add_node(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<NodeCreateRequest>,
+) -> Result<Json<NodeItem>, (StatusCode, &'static str)> {
+    let _ = auth::require_admin(&headers, &state).await?;
+
+    let id = uuid::Uuid::new_v4().to_string();
+    sqlx::query(
+        "INSERT INTO nodes (id, name, region, cpu_cores_total, memory_mb_total, storage_gb_total, api_endpoint, api_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    )
+    .bind(&id)
+    .bind(&payload.name)
+    .bind(&payload.region)
+    .bind(payload.cpu_cores_total)
+    .bind(payload.memory_mb_total)
+    .bind(payload.storage_gb_total)
+    .bind(&payload.api_endpoint)
+    .bind(&payload.api_token)
+    .execute(&state.db)
+    .await
+    .map_err(|err| {
+        error!(error = %err, "failed to create node");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to create node")
+    })?;
+
+    Ok(Json(NodeItem {
+        id,
+        name: payload.name,
+        region: payload.region,
+        cpu_cores_total: payload.cpu_cores_total,
+        memory_mb_total: payload.memory_mb_total,
+        storage_gb_total: payload.storage_gb_total,
+        cpu_cores_used: 0,
+        memory_mb_used: 0,
+        storage_gb_used: 0,
+        api_endpoint: payload.api_endpoint,
+        api_token: payload.api_token,
+    }))
+}
+
+pub async fn update_node(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(node_id): Path<String>,
+    Json(payload): Json<NodeUpdateRequest>,
+) -> Result<Json<NodeItem>, (StatusCode, &'static str)> {
+    let _ = auth::require_admin(&headers, &state).await?;
+
+    let current = sqlx::query_as::<_, (String, String, String, i64, i64, i64, i64, i64, i64, Option<String>, Option<String>)>(
+        "SELECT id, name, region, cpu_cores_total, memory_mb_total, storage_gb_total, cpu_cores_used, memory_mb_used, storage_gb_used, api_endpoint, api_token FROM nodes WHERE id = ? LIMIT 1",
+    )
+    .bind(&node_id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|err| {
+        error!(error = %err, node_id = %node_id, "failed to query target node");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to load node")
+    })?
+    .ok_or((StatusCode::NOT_FOUND, "node not found"))?;
+
+    let next_name = payload.name.unwrap_or(current.1);
+    let next_region = payload.region.unwrap_or(current.2);
+    let next_cpu_cores_total = payload.cpu_cores_total.unwrap_or(current.3);
+    let next_memory_mb_total = payload.memory_mb_total.unwrap_or(current.4);
+    let next_storage_gb_total = payload.storage_gb_total.unwrap_or(current.5);
+    let next_api_endpoint = payload.api_endpoint.or(current.9);
+    let next_api_token = payload.api_token.or(current.10);
+
+    sqlx::query(
+        "UPDATE nodes SET name = ?, region = ?, cpu_cores_total = ?, memory_mb_total = ?, storage_gb_total = ?, api_endpoint = ?, api_token = ? WHERE id = ?"
+    )
+    .bind(&next_name)
+    .bind(&next_region)
+    .bind(next_cpu_cores_total)
+    .bind(next_memory_mb_total)
+    .bind(next_storage_gb_total)
+    .bind(&next_api_endpoint)
+    .bind(&next_api_token)
+    .bind(&node_id)
+    .execute(&state.db)
+    .await
+    .map_err(|err| {
+        error!(error = %err, node_id = %node_id, "failed to update node");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to update node")
+    })?;
+
+    Ok(Json(NodeItem {
+        id: current.0,
+        name: next_name,
+        region: next_region,
+        cpu_cores_total: next_cpu_cores_total,
+        memory_mb_total: next_memory_mb_total,
+        storage_gb_total: next_storage_gb_total,
+        cpu_cores_used: current.6,
+        memory_mb_used: current.7,
+        storage_gb_used: current.8,
+        api_endpoint: next_api_endpoint,
+        api_token: next_api_token,
+    }))
+}
+
+pub async fn list_instances(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<InstanceItem>>, (StatusCode, &'static str)> {
+    let _ = auth::require_admin(&headers, &state).await?;
+
+    let rows = sqlx::query_as::<_, (String, String, String, String, String, String, String)>(
+        "SELECT 
+            i.id, 
+            u.email as user_email, 
+            n.name as node_name, 
+            p.name as plan_name, 
+            i.status, 
+            i.os_template, 
+            i.created_at 
+        FROM instances i
+        JOIN users u ON i.user_id = u.id
+        JOIN nodes n ON i.node_id = n.id
+        JOIN nat_plans p ON i.plan_id = p.id
+        ORDER BY i.created_at DESC LIMIT 500",
+    )
+    .fetch_all(&state.db)
+    .await
+    .map_err(|err| {
+        error!(error = %err, "failed to list instances");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to load instances")
+    })?;
+
+    let items = rows
+        .into_iter()
+        .map(
+            |(id, user_email, node_name, plan_name, status, os_template, created_at)| InstanceItem {
+                id,
+                user_email,
+                node_name,
+                plan_name,
+                status,
+                os_template,
+                created_at,
+            },
+        )
+        .collect();
+
+    Ok(Json(items))
 }

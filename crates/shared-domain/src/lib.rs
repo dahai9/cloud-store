@@ -66,14 +66,44 @@ pub struct NatPlan {
     pub active: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum InstanceStatus {
+    Pending,
+    Starting,
+    Running,
+    Stopped,
+    Suspended,
+    Deleted,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Node {
     pub id: Uuid,
     pub name: String,
     pub region: String,
-    pub total_capacity: i32,
-    pub used_capacity: i32,
+    pub cpu_cores_total: i32,
+    pub memory_mb_total: i32,
+    pub storage_gb_total: i32,
+    pub cpu_cores_used: i32,
+    pub memory_mb_used: i32,
+    pub storage_gb_used: i32,
+    pub api_endpoint: Option<String>,
+    pub api_token: Option<String>,
     pub active: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Instance {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub node_id: Uuid,
+    pub order_id: Uuid,
+    pub plan_id: Uuid,
+    pub provider_instance_id: Option<String>,
+    pub status: InstanceStatus,
+    pub os_template: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

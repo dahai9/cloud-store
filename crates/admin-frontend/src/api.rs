@@ -1,7 +1,7 @@
 use reqwest::Client;
 use crate::models::{
-    AuthPayload, AuthTokenResponse, AuthProfileResponse, NodeItem, AdminPlanItem,
-    AdminPlanUpdateRequest, GuestItem, GuestUpdateRequest, TicketItem,
+    AuthPayload, AuthTokenResponse, AuthProfileResponse, NodeItem, NodeCreateRequest, NodeUpdateRequest,
+    InstanceItem, AdminPlanItem, AdminPlanUpdateRequest, GuestItem, GuestUpdateRequest, TicketItem,
     TicketStatusUpdateRequest, TicketReplyRequest,
 };
 
@@ -60,6 +60,66 @@ pub async fn get_nodes(api_base: &str, token: &str) -> Result<Vec<NodeItem>, Str
     resp.json::<Vec<NodeItem>>()
         .await
         .map_err(|e| format!("Failed to parse nodes: {e}"))
+}
+
+pub async fn create_node(
+    api_base: &str,
+    token: &str,
+    payload: &NodeCreateRequest,
+) -> Result<NodeItem, String> {
+    let client = Client::new();
+    let resp = client.post(&format!("{api_base}/api/admin/nodes"))
+        .header("Authorization", &format!("Bearer {token}"))
+        .json(payload)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Create failed: {}", resp.status()));
+    }
+    resp.json::<NodeItem>()
+        .await
+        .map_err(|e| format!("Failed to parse response: {e}"))
+}
+
+pub async fn update_node(
+    api_base: &str,
+    token: &str,
+    node_id: &str,
+    payload: &NodeUpdateRequest,
+) -> Result<NodeItem, String> {
+    let client = Client::new();
+    let resp = client.patch(&format!("{api_base}/api/admin/nodes/{node_id}"))
+        .header("Authorization", &format!("Bearer {token}"))
+        .json(payload)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Update failed: {}", resp.status()));
+    }
+    resp.json::<NodeItem>()
+        .await
+        .map_err(|e| format!("Failed to parse response: {e}"))
+}
+
+pub async fn get_instances(api_base: &str, token: &str) -> Result<Vec<InstanceItem>, String> {
+    let client = Client::new();
+    let resp = client.get(&format!("{api_base}/api/admin/instances"))
+        .header("Authorization", &format!("Bearer {token}"))
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Instances request failed: {}", resp.status()));
+    }
+
+    resp.json::<Vec<InstanceItem>>()
+        .await
+        .map_err(|e| format!("Failed to parse instances: {e}"))
 }
 
 pub async fn get_plans(api_base: &str, token: &str) -> Result<Vec<AdminPlanItem>, String> {

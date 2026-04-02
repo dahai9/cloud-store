@@ -1,6 +1,7 @@
 
 use crate::pages::{
-    BalancePage, LoginPage, OrderPage, ProfilePage, ServicesPage, StorefrontPage, TicketsPage,
+    BalancePage, InstanceDetailPage, LoginPage, OrderPage, ProfilePage, ServicesPage,
+    StorefrontPage, TicketsPage,
 };
 
 use dioxus::prelude::*;
@@ -27,6 +28,8 @@ pub enum Route {
     TicketsPage {},
     #[route("/app/balance")]
     BalancePage {},
+    #[route("/app/instances/:id")]
+    InstanceDetailPage { id: String },
 }
 
 
@@ -136,6 +139,46 @@ pub struct PayPalCreateOrderResponse {
 }
 
 
+#[derive(Clone, Deserialize, Serialize, PartialEq)]
+pub struct InstanceItem {
+    pub id: String,
+    pub node_id: String,
+    pub plan_id: String,
+    pub status: String,
+    pub os_template: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum InstanceAction {
+    Start,
+    Stop,
+    Restart,
+    ResetPassword { new_password: Option<String> },
+    Reinstall { os_template: Option<String> },
+}
+
+#[derive(Clone, Serialize)]
+pub struct ActionRequest {
+    pub action: InstanceAction,
+}
+
+#[derive(Clone, Deserialize)]
+pub struct InstanceMetrics {
+    pub cpu_usage_percent: f64,
+    pub memory_used_mb: f64,
+    pub network_tx_bytes: u64,
+    pub network_rx_bytes: u64,
+}
+
+#[derive(Clone, Deserialize)]
+pub struct ConsoleToken {
+    pub url: String,
+    pub token: String,
+}
+
+
 #[derive(Clone)]
 pub struct SessionState {
     pub api_base: String,
@@ -143,6 +186,7 @@ pub struct SessionState {
     pub profile: Option<AuthProfileResponse>,
     pub invoices: Vec<InvoiceItem>,
     pub tickets: Vec<TicketItem>,
+    pub instances: Vec<InstanceItem>,
     pub loading: bool,
     pub error: Option<String>,
 }
@@ -164,6 +208,7 @@ impl SessionState {
             profile: None,
             invoices: vec![],
             tickets: vec![],
+            instances: vec![],
             loading: false,
             error: None,
         }

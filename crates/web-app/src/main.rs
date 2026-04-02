@@ -1,6 +1,7 @@
 mod admin;
 mod auth;
 mod billing;
+mod instances;
 mod payment;
 mod routes;
 mod tickets;
@@ -65,47 +66,6 @@ async fn db_health(
         status: "ok",
         database: "connected",
     }))
-}
-
-#[derive(Serialize)]
-struct NodeItem {
-    id: String,
-    name: String,
-    region: String,
-    total_capacity: i64,
-    used_capacity: i64,
-}
-
-async fn list_nodes(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<Vec<NodeItem>>, (StatusCode, &'static str)> {
-    let _ = auth::require_admin(&headers, &state).await?;
-
-    let rows = sqlx::query_as::<_, (String, String, String, i64, i64)>(
-        "SELECT id, name, region, total_capacity, used_capacity FROM nodes ORDER BY created_at DESC LIMIT 100",
-    )
-    .fetch_all(&state.db)
-    .await
-    .map_err(|err| {
-        tracing::error!(error = %err, "failed to list nodes");
-        (StatusCode::INTERNAL_SERVER_ERROR, "failed to load nodes")
-    })?;
-
-    let items = rows
-        .into_iter()
-        .map(
-            |(id, name, region, total_capacity, used_capacity)| NodeItem {
-                id,
-                name,
-                region,
-                total_capacity,
-                used_capacity,
-            },
-        )
-        .collect();
-
-    Ok(Json(items))
 }
 
 fn require_env(name: &str) -> anyhow::Result<String> {
@@ -238,6 +198,11 @@ fn build_guest_router(app_state: AppState) -> Router {
         )
         .route("/api/tickets", get(tickets::list_tickets))
         .route("/api/invoices", get(billing::list_invoices))
+        .route("/api/instances", get(instances::list_instances))
+        .route("/api/instances/{id}", get(instances::get_instance))
+        .route("/api/instances/{id}/action", post(instances::perform_action))
+        .route("/api/instances/{id}/metrics", get(instances::get_metrics))
+        .route("/api/instances/{id}/console", get(instances::get_console))
         .layer(cors_layer())
         .with_state(app_state)
 }
@@ -248,7 +213,10 @@ fn build_admin_router(app_state: AppState) -> Router {
         .route("/api/db-health", get(db_health))
         .route("/api/auth/login", post(auth::login))
         .route("/api/auth/me", get(auth::me))
-        .route("/api/admin/nodes", get(list_nodes))
+        .route("/api/admin/nodes", get(admin::list_nodes))
+        .route("/api/admin/nodes", post(admin::add_node))
+        .route("/api/admin/nodes/{id}", patch(admin::update_node))
+        .route("/api/admin/instances", get(admin::list_instances))
         .route("/api/admin/plans", get(admin::list_plans))
         .route("/api/admin/plans/{plan_id}", patch(admin::update_plan))
         .route("/api/admin/guests", get(admin::list_guests))

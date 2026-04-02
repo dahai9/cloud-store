@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use dioxus::prelude::*;
 use crate::pages::{
-    LoginPage, OverviewPage, NodesPage, PlansPage, GuestsPage, TicketsPage, DashboardLayout,
+    LoginPage, OverviewPage, NodesPage, InstancesPage, PlansPage, GuestsPage, TicketsPage, DashboardLayout,
 };
 
 #[derive(Clone, Routable, Debug, PartialEq)]
@@ -11,6 +11,8 @@ pub enum Route {
         OverviewPage {},
         #[route("/nodes")]
         NodesPage {},
+        #[route("/instances")]
+        InstancesPage {},
         #[route("/plans")]
         PlansPage {},
         #[route("/guests")]
@@ -40,13 +42,52 @@ pub struct AuthProfileResponse {
     pub role: String,
 }
 
-#[derive(Clone, Deserialize, PartialEq)]
+#[derive(Clone, Deserialize, PartialEq, Serialize)]
 pub struct NodeItem {
     pub id: String,
     pub name: String,
     pub region: String,
-    pub total_capacity: i64,
-    pub used_capacity: i64,
+    pub cpu_cores_total: i64,
+    pub memory_mb_total: i64,
+    pub storage_gb_total: i64,
+    pub cpu_cores_used: i64,
+    pub memory_mb_used: i64,
+    pub storage_gb_used: i64,
+    pub api_endpoint: Option<String>,
+    pub api_token: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct NodeCreateRequest {
+    pub name: String,
+    pub region: String,
+    pub cpu_cores_total: i64,
+    pub memory_mb_total: i64,
+    pub storage_gb_total: i64,
+    pub api_endpoint: Option<String>,
+    pub api_token: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct NodeUpdateRequest {
+    pub name: Option<String>,
+    pub region: Option<String>,
+    pub cpu_cores_total: Option<i64>,
+    pub memory_mb_total: Option<i64>,
+    pub storage_gb_total: Option<i64>,
+    pub api_endpoint: Option<String>,
+    pub api_token: Option<String>,
+}
+
+#[derive(Clone, Deserialize, PartialEq)]
+pub struct InstanceItem {
+    pub id: String,
+    pub user_email: String,
+    pub node_name: String,
+    pub plan_name: String,
+    pub status: String,
+    pub os_template: String,
+    pub created_at: String,
 }
 
 #[derive(Clone, Deserialize, PartialEq)]
@@ -104,6 +145,7 @@ pub struct AdminSessionState {
     pub token: Option<String>,
     pub profile: Option<AuthProfileResponse>,
     pub nodes: Vec<NodeItem>,
+    pub instances: Vec<InstanceItem>,
     pub plans: Vec<AdminPlanItem>,
     pub guests: Vec<GuestItem>,
     pub tickets: Vec<TicketItem>,

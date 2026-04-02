@@ -4304,6 +4304,7 @@ dependencies = [
  "chrono",
  "dotenvy",
  "hmac",
+ "provider-adapter",
  "reqwest",
  "rust_decimal",
  "serde",

@@ -745,10 +745,60 @@ body::before {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
 }
 
-.service-item h4 {
+.service-item:hover {
+  transform: translateY(-2px);
+  border-color: #d8e3fb;
+  box-shadow: 0 8px 20px rgba(17, 35, 88, 0.06);
+}
+
+.instance-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.instance-detail-header h3 {
   margin: 0;
+  font-size: 22px;
+}
+
+.detail-list {
+  display: grid;
+  gap: 12px;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.metric-card {
+  background: rgba(31, 87, 204, 0.04);
+  border: 1px solid rgba(31, 87, 204, 0.08);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.metric-card p {
+  margin: 0;
+}
+
+.action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.action-bar button {
+  flex: 1;
+  min-width: 120px;
 }
 
 .muted {

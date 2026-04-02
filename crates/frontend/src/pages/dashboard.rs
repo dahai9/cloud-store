@@ -65,8 +65,9 @@ pub fn ProfilePage() -> Element {
 #[component]
 pub fn ServicesPage() -> Element {
     let session = use_context::<Signal<SessionState>>();
+    let state = session();
 
-    if session().token.is_none() {
+    if state.token.is_none() {
         return rsx! {
             LoginRequiredView {}
         };
@@ -77,19 +78,274 @@ pub fn ServicesPage() -> Element {
             section { class: "panel",
                 h3 { "Active Instances" }
                 div { class: "service-list",
-                    article { class: "service-item",
-                        div {
-                            h4 { "US-NY NAT Standard" }
-                            p { class: "muted", "Expires: 2026-04-30" }
+                    if state.instances.is_empty() {
+                        p { class: "muted", "You don't have any active instances yet." }
+                    } else {
+                        for item in &state.instances {
+                            Link {
+                                to: Route::InstanceDetailPage { id: item.id.clone() },
+                                article { class: "service-item",
+                                    div {
+                                        h4 { "{item.plan_id.to_uppercase()} - {item.id}" }
+                                        p { class: "muted", "Created: {item.created_at}" }
+                                    }
+                                    span { class: format!("pill {}", instance_status_class(&item.status)),
+                                        "{item.status}"
+                                    }
+                                }
+                            }
                         }
-                        span { class: "pill paid", "Running" }
                     }
-                    article { class: "service-item",
-                        div {
-                            h4 { "HK NAT Mini" }
-                            p { class: "muted", "Expires: 2026-05-12" }
+                }
+            }
+        }
+    }
+}
+
+fn instance_status_class(status: &str) -> &'static str {
+    match status.to_lowercase().as_str() {
+        "running" => "paid",
+        "stopped" => "expired",
+        "pending" | "starting" => "pending",
+        _ => "pending",
+    }
+}
+
+
+#[component]
+pub fn InstanceDetailPage(id: String) -> Element {
+    let session = use_context::<Signal<SessionState>>();
+    let state = session();
+    let navigator = use_navigator();
+
+    if state.token.is_none() {
+        return rsx! {
+            LoginRequiredView {}
+        };
+    }
+
+    let token = state.token.clone().unwrap();
+    let api_base = state.api_base.clone();
+
+    let mut instance = use_signal(|| None::<crate::models::InstanceItem>);
+    let mut metrics = use_signal(|| None::<crate::models::InstanceMetrics>);
+    let mut error = use_signal(|| None::<String>);
+    let mut action_loading = use_signal(|| false);
+
+    // Initial load
+    use_effect({
+        let id = id.clone();
+        let api_base = api_base.clone();
+        let token = token.clone();
+        move || {
+            let id = id.clone();
+            let api_base = api_base.clone();
+            let token = token.clone();
+            spawn(async move {
+                match api::fetch_instance_details(&api_base, &token, &id).await {
+                    Ok(data) => instance.set(Some(data)),
+                    Err(err) => error.set(Some(err)),
+                }
+            });
+        }
+    });
+
+    // Periodic metrics update
+    use_effect({
+        let id = id.clone();
+        let api_base = api_base.clone();
+        let token = token.clone();
+        move || {
+            let id = id.clone();
+            let api_base = api_base.clone();
+            let token = token.clone();
+            spawn(async move {
+                loop {
+                    match api::fetch_instance_metrics(&api_base, &token, &id).await {
+                        Ok(data) => metrics.set(Some(data)),
+                        Err(_) => {}
+                    }
+                    TimeoutFuture::new(5000).await;
+                }
+            });
+        }
+    });
+
+    let on_action = use_callback({
+        let id = id.clone();
+        let api_base = api_base.clone();
+        let token = token.clone();
+        move |action: crate::models::InstanceAction| {
+            let id = id.clone();
+            let api_base = api_base.clone();
+            let token = token.clone();
+            spawn(async move {
+                action_loading.set(true);
+                match api::perform_instance_action(&api_base, &token, &id, action).await {
+                    Ok(_) => {
+                        // Refresh details after a short delay
+                        TimeoutFuture::new(1000).await;
+                        if let Ok(data) = api::fetch_instance_details(&api_base, &token, &id).await {
+                            instance.set(Some(data));
                         }
-                        span { class: "pill pending", "Pending Payment" }
+                    }
+                    Err(err) => error.set(Some(err)),
+                }
+                action_loading.set(false);
+            });
+        }
+    });
+
+    let on_console = {
+        let id = id.clone();
+        let api_base = api_base.clone();
+        let token = token.clone();
+        move |_| {
+            let id = id.clone();
+            let api_base = api_base.clone();
+            let token = token.clone();
+            spawn(async move {
+                match api::fetch_instance_console(&api_base, &token, &id).await {
+                    Ok(console) => {
+                        #[cfg(target_arch = "wasm32")]
+                        {
+                            if let Some(win) = web_sys::window() {
+                                let url = format!("{}?token={}", console.url, console.token);
+                                let _ = win.open_with_url_and_target(&url, "_blank");
+                            }
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        {
+                            let _ = console;
+                            error.set(Some("Console only available in web browser".to_string()));
+                        }
+                    }
+                    Err(err) => error.set(Some(err)),
+                }
+            });
+        }
+    };
+
+    let Some(inst) = instance() else {
+        return rsx! {
+            DashboardShell { title: "Instance Details", active_tab: DashboardTab::Services,
+                div { class: "panel",
+                    if let Some(err) = error() {
+                        p { class: "notice error-notice", "{err}" }
+                    } else {
+                        p { "Loading instance details..." }
+                    }
+                }
+            }
+        };
+    };
+
+    rsx! {
+        DashboardShell { title: "Manage Instance", active_tab: DashboardTab::Services,
+            div { class: "instance-detail-header",
+                button {
+                    class: "btn-secondary",
+                    onclick: move |_| {
+                        navigator.push(Route::ServicesPage {});
+                    },
+                    "← Back to List"
+                }
+                h3 { "{inst.plan_id.to_uppercase()} ({inst.id})" }
+            }
+
+            if let Some(err) = error() {
+                p { class: "notice error-notice", "{err}" }
+            }
+
+            section { class: "grid-two",
+                article { class: "panel",
+                    h4 { "Status & Info" }
+                    div { class: "detail-list",
+                        div { class: "detail-item",
+                            span { class: "muted", "Status" }
+                            span { class: format!("pill {}", instance_status_class(&inst.status)),
+                                "{inst.status}"
+                            }
+                        }
+                        div { class: "detail-item",
+                            span { class: "muted", "Node" }
+                            span { class: "fact", "{inst.node_id}" }
+                        }
+                        div { class: "detail-item",
+                            span { class: "muted", "OS Template" }
+                            span { class: "fact", "{inst.os_template}" }
+                        }
+                        div { class: "detail-item",
+                            span { class: "muted", "Created At" }
+                            span { class: "fact", "{inst.created_at}" }
+                        }
+                    }
+                }
+
+                article { class: "panel",
+                    h4 { "Real-time Metrics" }
+                    if let Some(m) = metrics() {
+                        div { class: "metrics-grid",
+                            div { class: "metric-card",
+                                p { class: "muted", "CPU" }
+                                p { class: "fact", "{m.cpu_usage_percent:.1}%" }
+                            }
+                            div { class: "metric-card",
+                                p { class: "muted", "RAM" }
+                                p { class: "fact", "{m.memory_used_mb:.0} MB" }
+                            }
+                            div { class: "metric-card",
+                                p { class: "muted", "Net TX" }
+                                p { class: "fact", "{m.network_tx_bytes / 1024} KB" }
+                            }
+                            div { class: "metric-card",
+                                p { class: "muted", "Net RX" }
+                                p { class: "fact", "{m.network_rx_bytes / 1024} KB" }
+                            }
+                        }
+                    } else {
+                        p { class: "muted", "Loading metrics..." }
+                    }
+                }
+            }
+
+            section { class: "panel",
+                h4 { "Actions" }
+                div { class: "action-bar",
+                    button {
+                        class: "btn-primary",
+                        disabled: action_loading(),
+                        onclick: move |_| on_action(crate::models::InstanceAction::Start),
+                        "Start"
+                    }
+                    button {
+                        class: "btn-secondary",
+                        disabled: action_loading(),
+                        onclick: move |_| on_action(crate::models::InstanceAction::Stop),
+                        "Stop"
+                    }
+                    button {
+                        class: "btn-secondary",
+                        disabled: action_loading(),
+                        onclick: move |_| on_action(crate::models::InstanceAction::Restart),
+                        "Restart"
+                    }
+                    button {
+                        class: "btn-secondary",
+                        disabled: action_loading(),
+                        onclick: move |_| on_action(crate::models::InstanceAction::Reinstall { os_template: None }),
+                        "Reinstall"
+                    }
+                    button {
+                        class: "btn-secondary",
+                        disabled: action_loading(),
+                        onclick: move |_| on_action(crate::models::InstanceAction::ResetPassword { new_password: None }),
+                        "Reset Password"
+                    }
+                    button {
+                        class: "btn-primary",
+                        onclick: on_console,
+                        "Open Console (VNC)"
                     }
                 }
             }

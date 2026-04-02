@@ -471,8 +471,13 @@ async fn ensure_inventory_available(
     plan_id: &str,
 ) -> Result<(), (StatusCode, &'static str)> {
     let available_capacity = sqlx::query_scalar::<_, i64>(
-        "SELECT COALESCE(SUM(total_capacity - used_capacity), 0) FROM nodes WHERE active = 1",
+        "SELECT COUNT(*) FROM nodes 
+         JOIN nat_plans ON nat_plans.id = ? 
+         WHERE nodes.active = 1 
+         AND (nodes.memory_mb_total - nodes.memory_mb_used) >= nat_plans.memory_mb 
+         AND (nodes.storage_gb_total - nodes.storage_gb_used) >= nat_plans.storage_gb",
     )
+    .bind(plan_id)
     .fetch_one(&state.db)
     .await
     .map_err(|err| {
@@ -485,7 +490,7 @@ async fn ensure_inventory_available(
 
     if available_capacity <= 0 {
         warn!(
-            available_capacity = available_capacity,
+            plan_id = plan_id,
             "inventory unavailable for new payment"
         );
         return Err((StatusCode::CONFLICT, "inventory unavailable"));

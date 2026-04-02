@@ -153,6 +153,13 @@ pub async fn me(
     }))
 }
 
+pub async fn require_user(
+    headers: &HeaderMap,
+    state: &AppState,
+) -> Result<AuthUser, (StatusCode, &'static str)> {
+    require_auth(headers, state).await
+}
+
 pub async fn require_auth(
     headers: &HeaderMap,
     state: &AppState,

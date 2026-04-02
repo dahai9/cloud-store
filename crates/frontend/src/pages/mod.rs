@@ -16,7 +16,7 @@ mod public;
 pub use auth::LoginPage;
 
 pub use dashboard::{
-    BalancePage, ProfilePage, ServicesPage, TicketsPage,
+    BalancePage, InstanceDetailPage, ProfilePage, ServicesPage, TicketsPage,
 };
 
 pub use public::{OrderPage, StorefrontPage};
@@ -47,6 +47,7 @@ pub fn App() -> Element {
                     current.profile = Some(bundle.profile);
                     current.invoices = bundle.invoices;
                     current.tickets = bundle.tickets;
+                    current.instances = bundle.instances;
                     current.loading = false;
                     current.error = None;
                 }
@@ -58,6 +59,7 @@ pub fn App() -> Element {
                     current.profile = None;
                     current.invoices.clear();
                     current.tickets.clear();
+                    current.instances.clear();
                     api::clear_persisted_session();
                 }
             }
