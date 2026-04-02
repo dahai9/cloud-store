@@ -5,7 +5,9 @@ use crate::models::{
 
 use reqwest::Client;
 
+#[cfg(target_arch = "wasm32")]
 const AUTH_TOKEN_KEY: &str = "cloud_store.auth.token";
+#[cfg(target_arch = "wasm32")]
 const AUTH_PROFILE_KEY: &str = "cloud_store.auth.profile";
 
 pub fn default_api_base() -> String {

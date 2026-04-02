@@ -12,5 +12,7 @@ fn main() {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
+    // Reference modules to avoid dead_code warnings during host-side cargo check
+    let _ = (api::default_api_base, models::AdminSessionState::default, pages::App);
     eprintln!("admin frontend is a web-only app; run with dx serve --platform web");
 }
