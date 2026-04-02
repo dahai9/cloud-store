@@ -1,9 +1,12 @@
-use anyhow::Context;
-use provider_adapter::{ComputeProvider, StubProvider};
-use sqlx::SqlitePool;
+use anyhow::{anyhow, Context};
+use provider_adapter::{ComputeProvider, IncusProvider, NodeConnection, ProvisionRequest};
+use rust_decimal::Decimal;
+use shared_domain::{NatPlan, DEFAULT_OS_TEMPLATE};
+use sqlx::{Row, SqlitePool};
 use std::path::PathBuf;
-use tracing::info;
-use tracing::warn;
+use std::str::FromStr;
+use tracing::{error, info, warn};
+use uuid::Uuid;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -20,18 +23,200 @@ async fn main() -> anyhow::Result<()> {
 
     info!("worker booted");
 
-    expire_overdue_invoices(&db).await?;
+    let provider = IncusProvider::new().context("failed to initialize incus provider")?;
 
-    let provider = StubProvider;
-    run_provisioning_tick(&provider).await?;
-    run_renewal_tick().await;
+    loop {
+        if let Err(e) = expire_overdue_invoices(&db).await {
+            error!(error = %e, "failed to expire overdue invoices");
+        }
 
+        if let Err(e) = run_provisioning_tick(&db, &provider).await {
+            error!(error = %e, "failed to run provisioning tick");
+        }
+
+        run_renewal_tick().await;
+
+        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+    }
+}
+
+async fn run_provisioning_tick(
+    db: &SqlitePool,
+    provider: &dyn ComputeProvider,
+) -> anyhow::Result<()> {
+    let orders = sqlx::query(
+        "SELECT id, user_id, plan_id FROM orders WHERE status IN ('paid', 'provisioning') LIMIT 10",
+    )
+    .fetch_all(db)
+    .await?;
+
+    for order in orders {
+        let order_id: String = order.get("id");
+        let user_id: String = order.get("user_id");
+        let plan_id: String = order.get("plan_id");
+
+        if let Err(e) = process_order(db, provider, &order_id, &user_id, &plan_id).await {
+            error!(order_id = %order_id, error = %e, "failed to provision order");
+            sqlx::query("UPDATE orders SET status = 'failed' WHERE id = ?")
+                .bind(&order_id)
+                .execute(db)
+                .await?;
+        }
+    }
     Ok(())
 }
 
-async fn run_provisioning_tick(provider: &dyn ComputeProvider) -> anyhow::Result<()> {
-    let _ = provider;
-    info!("provisioning tick placeholder");
+async fn process_order(
+    db: &SqlitePool,
+    provider: &dyn ComputeProvider,
+    order_id_str: &str,
+    user_id_str: &str,
+    plan_id_str: &str,
+) -> anyhow::Result<()> {
+    info!(order_id = %order_id_str, "processing provisioning for order");
+
+    let order_id = Uuid::parse_str(order_id_str)?;
+    let user_id = Uuid::parse_str(user_id_str)?;
+    let plan_id = Uuid::parse_str(plan_id_str)?;
+
+    // 1. Mark as Provisioning
+    sqlx::query(
+        "UPDATE orders SET status = 'provisioning', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+    )
+    .bind(order_id_str)
+    .execute(db)
+    .await?;
+
+    // 2. Fetch Plan details
+    let plan_row = sqlx::query(
+        "SELECT id, code, name, memory_mb, storage_gb, cpu_cores, bandwidth_mbps, traffic_gb, monthly_price FROM nat_plans WHERE id = ?"
+    )
+    .bind(plan_id_str)
+    .fetch_one(db)
+    .await?;
+
+    let plan = NatPlan {
+        id: Uuid::parse_str(plan_row.get("id"))?,
+        code: plan_row.get("code"),
+        name: plan_row.get("name"),
+        memory_mb: plan_row.get::<i64, _>("memory_mb") as i32,
+        storage_gb: plan_row.get::<i64, _>("storage_gb") as i32,
+        cpu_cores: plan_row.get::<i64, _>("cpu_cores") as i32,
+        bandwidth_mbps: plan_row.get::<i64, _>("bandwidth_mbps") as i32,
+        traffic_gb: plan_row.get::<i64, _>("traffic_gb") as i32,
+        monthly_price: Decimal::from_str(&plan_row.get::<f64, _>("monthly_price").to_string())
+            .unwrap_or(Decimal::ZERO),
+        active: true,
+    };
+
+    // 3. Find Node with capacity (Least Used RAM)
+    let node_row = sqlx::query(
+           "SELECT id, cpu_cores_total, memory_mb_total, storage_gb_total, api_endpoint, api_token FROM nodes
+            WHERE active = 1
+            AND (memory_mb_total - memory_mb_used) >= ?
+            AND (storage_gb_total - storage_gb_used) >= ?
+         ORDER BY (memory_mb_total - memory_mb_used) DESC LIMIT 1"
+    )
+    .bind(plan.memory_mb as i64)
+    .bind(plan.storage_gb as i64)
+    .fetch_optional(db)
+    .await?
+    .ok_or_else(|| anyhow!("no suitable node found with enough capacity"))?;
+
+    let node_id_str: String = node_row.get("id");
+    let node_id = Uuid::parse_str(&node_id_str)?;
+    let node_conn = NodeConnection {
+        endpoint: node_row
+            .get::<Option<String>, _>("api_endpoint")
+            .unwrap_or_default(),
+        token: node_row.get::<Option<String>, _>("api_token"),
+    };
+
+    // 4. Find/Reserve NAT Port Lease
+    let lease_row = sqlx::query(
+       "SELECT id, public_ip, start_port, end_port FROM nat_port_leases
+        WHERE node_id = ? AND (reserved_for_order_id = ? OR reserved = 0)
+         LIMIT 1",
+    )
+    .bind(&node_id_str)
+    .bind(order_id_str)
+    .fetch_optional(db)
+    .await?
+    .ok_or_else(|| anyhow!("no available NAT port leases on the selected node"))?;
+
+    let lease_id: String = lease_row.get("id");
+
+    // 5. Call Provider to create LXC container
+    let os_template = DEFAULT_OS_TEMPLATE.to_string();
+    let req = ProvisionRequest {
+        order_id,
+        user_id,
+        node_id,
+        plan: plan.clone(),
+        os_template: os_template.clone(),
+    };
+
+    let result = provider.provision_instance(&node_conn, req).await?;
+
+    // 6. Update DB in a transaction
+    let mut tx = db.begin().await?;
+
+    // Increment Node usage
+    sqlx::query(
+        "UPDATE nodes SET
+            memory_mb_used = memory_mb_used + ?,
+            storage_gb_used = storage_gb_used + ?
+         WHERE id = ?",
+    )
+    .bind(plan.memory_mb as i64)
+    .bind(plan.storage_gb as i64)
+    .bind(&node_id_str)
+    .execute(&mut *tx)
+    .await?;
+
+    // Update Port Lease
+    sqlx::query(
+        "UPDATE nat_port_leases SET
+            reserved = 1,
+            reserved_for_order_id = ?
+         WHERE id = ?",
+    )
+    .bind(order_id_str)
+    .bind(&lease_id)
+    .execute(&mut *tx)
+    .await?;
+
+    // Create Instance record
+    let instance_id = Uuid::new_v4().to_string();
+    sqlx::query(
+        "INSERT INTO instances (id, user_id, node_id, order_id, plan_id, provider_instance_id, status, os_template)
+         VALUES (?, ?, ?, ?, ?, ?, 'running', ?)"
+    )
+    .bind(&instance_id)
+    .bind(user_id_str)
+    .bind(&node_id_str)
+    .bind(order_id_str)
+    .bind(plan_id_str)
+    .bind(&result.instance_id)
+    .bind(&os_template)
+    .execute(&mut *tx)
+    .await?;
+
+    // Complete Order
+    sqlx::query("UPDATE orders SET status = 'active', updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        .bind(order_id_str)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+
+    info!(
+        order_id = %order_id_str,
+        instance_id = %instance_id,
+        node_id = %node_id_str,
+        "provisioning completed successfully"
+    );
+
     Ok(())
 }
 

@@ -3,9 +3,9 @@ use crate::AppState;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
-use provider_adapter::{ComputeProvider, StubProvider};
+use provider_adapter::{ComputeProvider, IncusProvider, NodeConnection};
 use serde::{Deserialize, Serialize};
-use shared_domain::InstanceStatus;
+use shared_domain::{InstanceStatus, DEFAULT_OS_TEMPLATE};
 use tracing::error;
 
 #[derive(Serialize)]
@@ -52,14 +52,16 @@ pub async fn list_instances(
 
     let items = rows
         .into_iter()
-        .map(|(id, node_id, plan_id, status, os_template, created_at)| InstanceItem {
-            id,
-            node_id,
-            plan_id,
-            status,
-            os_template,
-            created_at,
-        })
+        .map(
+            |(id, node_id, plan_id, status, os_template, created_at)| InstanceItem {
+                id,
+                node_id,
+                plan_id,
+                status,
+                os_template,
+                created_at,
+            },
+        )
         .collect();
 
     Ok(Json(items))
@@ -103,8 +105,11 @@ pub async fn perform_action(
 ) -> Result<StatusCode, (StatusCode, &'static str)> {
     let user = auth::require_user(&headers, &state).await?;
 
-    let instance = sqlx::query_as::<_, (String, Option<String>)>(
-        "SELECT id, provider_instance_id FROM instances WHERE id = ? AND user_id = ? LIMIT 1",
+    let row = sqlx::query_as::<_, (String, Option<String>, String, Option<String>)>(
+           "SELECT i.id, i.provider_instance_id, n.api_endpoint, n.api_token
+            FROM instances i
+            JOIN nodes n ON i.node_id = n.id
+         WHERE i.id = ? AND i.user_id = ? LIMIT 1",
     )
     .bind(&id)
     .bind(&user.id)
@@ -112,34 +117,83 @@ pub async fn perform_action(
     .await
     .map_err(|err| {
         error!(error = %err, instance_id = %id, "failed to query instance for action");
-        (StatusCode::INTERNAL_SERVER_ERROR, "failed to process action")
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to process action",
+        )
     })?
     .ok_or((StatusCode::NOT_FOUND, "instance not found"))?;
 
-    let provider_instance_id = instance.1.ok_or((StatusCode::BAD_REQUEST, "instance is not provisioned"))?;
+    let provider_instance_id = row
+        .1
+        .ok_or((StatusCode::BAD_REQUEST, "instance is not provisioned"))?;
+    let node_conn = NodeConnection {
+        endpoint: row.2,
+        token: row.3,
+    };
 
-    let provider = StubProvider;
+    let provider = IncusProvider::new().map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to initialize provider",
+        )
+    })?;
 
     match payload.action {
         InstanceAction::Start => {
-            provider.start_instance(&provider_instance_id).await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to start instance"))?;
+            let _ = provider
+                .start_instance(&node_conn, &provider_instance_id)
+                .await
+                .map_err(|_| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to start instance",
+                    )
+                })?;
             update_status(&state, &id, InstanceStatus::Starting).await?;
         }
         InstanceAction::Stop => {
-            provider.stop_instance(&provider_instance_id).await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to stop instance"))?;
+            let _ = provider
+                .stop_instance(&node_conn, &provider_instance_id)
+                .await
+                .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to stop instance"))?;
             update_status(&state, &id, InstanceStatus::Stopped).await?;
         }
         InstanceAction::Restart => {
-            provider.restart_instance(&provider_instance_id).await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to restart instance"))?;
+            let _ = provider
+                .restart_instance(&node_conn, &provider_instance_id)
+                .await
+                .map_err(|_| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to restart instance",
+                    )
+                })?;
             update_status(&state, &id, InstanceStatus::Starting).await?;
         }
         InstanceAction::ResetPassword { new_password } => {
             let pwd = new_password.unwrap_or_else(|| "RandomPassword123!".to_string());
-            provider.reset_password(&provider_instance_id, &pwd).await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to reset password"))?;
+            let _ = provider
+                .reset_password(&node_conn, &provider_instance_id, &pwd)
+                .await
+                .map_err(|_| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to reset password",
+                    )
+                })?;
         }
         InstanceAction::Reinstall { os_template } => {
-            let template = os_template.unwrap_or_else(|| "debian-12".to_string());
-            provider.reinstall_instance(&provider_instance_id, &template).await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to reinstall instance"))?;
+            let template = os_template.unwrap_or_else(|| DEFAULT_OS_TEMPLATE.to_string());
+            let _ = provider
+                .reinstall_instance(&node_conn, &provider_instance_id, &template)
+                .await
+                .map_err(|_| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to reinstall instance",
+                    )
+                })?;
             update_status(&state, &id, InstanceStatus::Pending).await?;
         }
     }
@@ -154,8 +208,11 @@ pub async fn get_metrics(
 ) -> Result<Json<provider_adapter::InstanceMetrics>, (StatusCode, &'static str)> {
     let user = auth::require_user(&headers, &state).await?;
 
-    let instance = sqlx::query_as::<_, (String, Option<String>)>(
-        "SELECT id, provider_instance_id FROM instances WHERE id = ? AND user_id = ? LIMIT 1",
+    let row = sqlx::query_as::<_, (String, Option<String>, String, Option<String>)>(
+           "SELECT i.id, i.provider_instance_id, n.api_endpoint, n.api_token
+            FROM instances i
+            JOIN nodes n ON i.node_id = n.id
+         WHERE i.id = ? AND i.user_id = ? LIMIT 1",
     )
     .bind(&id)
     .bind(&user.id)
@@ -167,10 +224,24 @@ pub async fn get_metrics(
     })?
     .ok_or((StatusCode::NOT_FOUND, "instance not found"))?;
 
-    let provider_instance_id = instance.1.ok_or((StatusCode::BAD_REQUEST, "instance is not provisioned"))?;
+    let provider_instance_id = row
+        .1
+        .ok_or((StatusCode::BAD_REQUEST, "instance is not provisioned"))?;
+    let node_conn = NodeConnection {
+        endpoint: row.2,
+        token: row.3,
+    };
 
-    let provider = StubProvider;
-    let metrics = provider.get_metrics(&provider_instance_id).await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to get metrics"))?;
+    let provider = IncusProvider::new().map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to initialize provider",
+        )
+    })?;
+    let metrics: provider_adapter::InstanceMetrics = provider
+        .get_metrics(&node_conn, &provider_instance_id)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to get metrics"))?;
 
     Ok(Json(metrics))
 }
@@ -182,8 +253,11 @@ pub async fn get_console(
 ) -> Result<Json<provider_adapter::ConsoleToken>, (StatusCode, &'static str)> {
     let user = auth::require_user(&headers, &state).await?;
 
-    let instance = sqlx::query_as::<_, (String, Option<String>)>(
-        "SELECT id, provider_instance_id FROM instances WHERE id = ? AND user_id = ? LIMIT 1",
+    let row = sqlx::query_as::<_, (String, Option<String>, String, Option<String>)>(
+           "SELECT i.id, i.provider_instance_id, n.api_endpoint, n.api_token
+            FROM instances i
+            JOIN nodes n ON i.node_id = n.id
+         WHERE i.id = ? AND i.user_id = ? LIMIT 1",
     )
     .bind(&id)
     .bind(&user.id)
@@ -195,15 +269,38 @@ pub async fn get_console(
     })?
     .ok_or((StatusCode::NOT_FOUND, "instance not found"))?;
 
-    let provider_instance_id = instance.1.ok_or((StatusCode::BAD_REQUEST, "instance is not provisioned"))?;
+    let provider_instance_id = row
+        .1
+        .ok_or((StatusCode::BAD_REQUEST, "instance is not provisioned"))?;
+    let node_conn = NodeConnection {
+        endpoint: row.2,
+        token: row.3,
+    };
 
-    let provider = StubProvider;
-    let token = provider.get_console_token(&provider_instance_id).await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to get console token"))?;
+    let provider = IncusProvider::new().map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to initialize provider",
+        )
+    })?;
+    let token: provider_adapter::ConsoleToken = provider
+        .get_console_token(&node_conn, &provider_instance_id)
+        .await
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to get console token",
+            )
+        })?;
 
     Ok(Json(token))
 }
 
-async fn update_status(state: &AppState, id: &str, status: InstanceStatus) -> Result<(), (StatusCode, &'static str)> {
+async fn update_status(
+    state: &AppState,
+    id: &str,
+    status: InstanceStatus,
+) -> Result<(), (StatusCode, &'static str)> {
     let status_str = match status {
         InstanceStatus::Pending => "pending",
         InstanceStatus::Starting => "starting",

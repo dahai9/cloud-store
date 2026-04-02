@@ -1,10 +1,8 @@
-
 use crate::api;
 
 use crate::models::{AuthTransportRisk, Route, SessionState};
 
 use dioxus::prelude::*;
-
 
 #[component]
 pub fn LoginPage(source: Option<String>, plan: Option<String>) -> Element {

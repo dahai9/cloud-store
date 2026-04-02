@@ -1,6 +1,6 @@
-use dioxus::prelude::*;
-use crate::models::{AdminSessionState, AuthPayload, Route};
 use crate::api;
+use crate::models::{AdminSessionState, AuthPayload, Route};
+use dioxus::prelude::*;
 
 #[component]
 pub fn LoginPage() -> Element {
@@ -13,7 +13,7 @@ pub fn LoginPage() -> Element {
         let api_base_val = api_base();
         let email_val = email();
         let password_val = password();
-        
+
         spawn(async move {
             session.write().loading = true;
             session.write().error = None;
@@ -29,16 +29,25 @@ pub fn LoginPage() -> Element {
                     match api::get_profile(&api_base_val, &auth.token).await {
                         Ok(profile) => {
                             if profile.role != "admin" {
-                                session.write().error = Some("当前账号不是管理员，无法进入管理端".to_string());
+                                session.write().error =
+                                    Some("当前账号不是管理员，无法进入管理端".to_string());
                                 session.write().loading = false;
                                 return;
                             }
-                            
+
                             // Load initial data
-                            let nodes = api::get_nodes(&api_base_val, &auth.token).await.unwrap_or_default();
-                            let plans = api::get_plans(&api_base_val, &auth.token).await.unwrap_or_default();
-                            let guests = api::get_guests(&api_base_val, &auth.token).await.unwrap_or_default();
-                            let tickets = api::get_tickets(&api_base_val, &auth.token).await.unwrap_or_default();
+                            let nodes = api::get_nodes(&api_base_val, &auth.token)
+                                .await
+                                .unwrap_or_default();
+                            let plans = api::get_plans(&api_base_val, &auth.token)
+                                .await
+                                .unwrap_or_default();
+                            let guests = api::get_guests(&api_base_val, &auth.token)
+                                .await
+                                .unwrap_or_default();
+                            let tickets = api::get_tickets(&api_base_val, &auth.token)
+                                .await
+                                .unwrap_or_default();
 
                             let mut s = session.write();
                             s.token = Some(auth.token);
@@ -49,7 +58,7 @@ pub fn LoginPage() -> Element {
                             s.tickets = tickets;
                             s.notice = Some("已登录管理员账号".to_string());
                             s.loading = false;
-                            
+
                             navigator().push(Route::OverviewPage {});
                         }
                         Err(e) => {

@@ -1,4 +1,3 @@
-
 use chrono::{DateTime, Utc};
 
 use crate::api;
@@ -8,7 +7,6 @@ use crate::models::{DashboardTab, Route, SessionState};
 use dioxus::prelude::*;
 
 use gloo_timers::future::TimeoutFuture;
-
 
 #[component]
 pub fn ProfilePage() -> Element {
@@ -61,7 +59,6 @@ pub fn ProfilePage() -> Element {
     }
 }
 
-
 #[component]
 pub fn ServicesPage() -> Element {
     let session = use_context::<Signal<SessionState>>();
@@ -110,7 +107,6 @@ fn instance_status_class(status: &str) -> &'static str {
         _ => "pending",
     }
 }
-
 
 #[component]
 pub fn InstanceDetailPage(id: String) -> Element {
@@ -185,7 +181,8 @@ pub fn InstanceDetailPage(id: String) -> Element {
                     Ok(_) => {
                         // Refresh details after a short delay
                         TimeoutFuture::new(1000).await;
-                        if let Ok(data) = api::fetch_instance_details(&api_base, &token, &id).await {
+                        if let Ok(data) = api::fetch_instance_details(&api_base, &token, &id).await
+                        {
                             instance.set(Some(data));
                         }
                     }
@@ -353,7 +350,6 @@ pub fn InstanceDetailPage(id: String) -> Element {
     }
 }
 
-
 #[component]
 pub fn TicketsPage() -> Element {
     let session = use_context::<Signal<SessionState>>();
@@ -405,7 +401,6 @@ pub fn TicketsPage() -> Element {
         }
     }
 }
-
 
 #[component]
 pub fn BalancePage() -> Element {
@@ -511,7 +506,9 @@ pub fn BalancePage() -> Element {
                     #[cfg(not(target_arch = "wasm32"))]
                     {
                         let _ = response;
-                        error.set(Some("当前平台暂不支持直接打开支付链接，请在 Web 端操作".to_string()));
+                        error.set(Some(
+                            "当前平台暂不支持直接打开支付链接，请在 Web 端操作".to_string(),
+                        ));
                     }
                 }
                 Err(err) => {
@@ -700,7 +697,6 @@ pub fn BalancePage() -> Element {
     }
 }
 
-
 fn modal_origin_from_client(client_x: f64, client_y: f64) -> String {
     #[cfg(target_arch = "wasm32")]
     {
@@ -733,7 +729,6 @@ fn modal_origin_from_client(client_x: f64, client_y: f64) -> String {
     }
 }
 
-
 fn invoice_status_label(invoice: &crate::models::InvoiceItem, now: DateTime<Utc>) -> String {
     if invoice.status.eq_ignore_ascii_case("open") && invoice_is_overdue(invoice, now) {
         "expired".to_string()
@@ -742,18 +737,15 @@ fn invoice_status_label(invoice: &crate::models::InvoiceItem, now: DateTime<Utc>
     }
 }
 
-
 fn invoice_is_payable(invoice: &crate::models::InvoiceItem, now: DateTime<Utc>) -> bool {
     invoice.status.eq_ignore_ascii_case("open") && !invoice_is_overdue(invoice, now)
 }
-
 
 fn invoice_is_overdue(invoice: &crate::models::InvoiceItem, now: DateTime<Utc>) -> bool {
     chrono::DateTime::parse_from_rfc3339(&invoice.due_at)
         .map(|due_at| due_at.with_timezone(&Utc) <= now)
         .unwrap_or(false)
 }
-
 
 fn invoice_pill_class(status: &str) -> &'static str {
     if status.eq_ignore_ascii_case("paid") {
@@ -764,7 +756,6 @@ fn invoice_pill_class(status: &str) -> &'static str {
         "pill pending"
     }
 }
-
 
 #[component]
 pub fn DashboardShell(title: &'static str, active_tab: DashboardTab, children: Element) -> Element {
@@ -838,7 +829,6 @@ pub fn DashboardShell(title: &'static str, active_tab: DashboardTab, children: E
         }
     }
 }
-
 
 #[component]
 pub fn LoginRequiredView() -> Element {

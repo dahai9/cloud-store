@@ -1,24 +1,25 @@
-use serde::{Deserialize, Serialize};
-use dioxus::prelude::*;
 use crate::pages::{
-    LoginPage, OverviewPage, NodesPage, InstancesPage, PlansPage, GuestsPage, TicketsPage, DashboardLayout,
+    DashboardLayout, GuestsPage, InstancesPage, LoginPage, NodesPage, OverviewPage, PlansPage,
+    TicketsPage,
 };
+use dioxus::prelude::*;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Routable, Debug, PartialEq)]
 pub enum Route {
     #[layout(DashboardLayout)]
-        #[route("/")]
-        OverviewPage {},
-        #[route("/nodes")]
-        NodesPage {},
-        #[route("/instances")]
-        InstancesPage {},
-        #[route("/plans")]
-        PlansPage {},
-        #[route("/guests")]
-        GuestsPage {},
-        #[route("/tickets")]
-        TicketsPage {},
+    #[route("/")]
+    OverviewPage {},
+    #[route("/nodes")]
+    NodesPage {},
+    #[route("/instances")]
+    InstancesPage {},
+    #[route("/plans")]
+    PlansPage {},
+    #[route("/guests")]
+    GuestsPage {},
+    #[route("/tickets")]
+    TicketsPage {},
     #[end_layout]
     #[route("/login")]
     LoginPage {},
@@ -96,13 +97,38 @@ pub struct AdminPlanItem {
     pub code: String,
     pub name: String,
     pub monthly_price: String,
+    pub memory_mb: i64,
+    pub storage_gb: i64,
+    pub cpu_cores: i64,
+    pub bandwidth_mbps: i64,
+    pub traffic_gb: i64,
     pub active: bool,
     pub max_inventory: Option<i64>,
     pub sold_inventory: i64,
 }
 
 #[derive(Clone, Serialize)]
+pub struct AdminPlanCreateRequest {
+    pub code: String,
+    pub name: String,
+    pub monthly_price: String,
+    pub memory_mb: i64,
+    pub storage_gb: i64,
+    pub cpu_cores: i64,
+    pub bandwidth_mbps: i64,
+    pub traffic_gb: i64,
+}
+
+#[derive(Clone, Serialize)]
 pub struct AdminPlanUpdateRequest {
+    pub code: Option<String>,
+    pub name: Option<String>,
+    pub monthly_price: Option<String>,
+    pub memory_mb: Option<i64>,
+    pub storage_gb: Option<i64>,
+    pub cpu_cores: Option<i64>,
+    pub bandwidth_mbps: Option<i64>,
+    pub traffic_gb: Option<i64>,
     pub active: Option<bool>,
     pub max_inventory: Option<i64>,
 }

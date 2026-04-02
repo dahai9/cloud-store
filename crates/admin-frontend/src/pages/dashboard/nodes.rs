@@ -1,6 +1,6 @@
-use dioxus::prelude::*;
-use crate::models::{AdminSessionState, NodeItem, NodeCreateRequest, NodeUpdateRequest};
 use crate::api;
+use crate::models::{AdminSessionState, NodeCreateRequest, NodeItem, NodeUpdateRequest};
+use dioxus::prelude::*;
 
 #[component]
 pub fn NodesPage() -> Element {
@@ -19,7 +19,7 @@ pub fn NodesPage() -> Element {
     let refresh_nodes = move |_| {
         let api_base = session().api_base.clone();
         let token = session().token.clone().unwrap_or_default();
-        
+
         spawn(async move {
             session.write().loading = true;
             match api::get_nodes(&api_base, &token).await {
@@ -39,14 +39,22 @@ pub fn NodesPage() -> Element {
     let on_submit_add = move |_| {
         let api_base = session().api_base.clone();
         let token = session().token.clone().unwrap_or_default();
-        
+
         let name_val = name();
         let region_val = region();
         let cpu_val = cpu().parse::<i64>().unwrap_or(0);
         let ram_val = ram().parse::<i64>().unwrap_or(0);
         let storage_val = storage().parse::<i64>().unwrap_or(0);
-        let endpoint_val = if endpoint().is_empty() { None } else { Some(endpoint()) };
-        let api_token_val = if api_token().is_empty() { None } else { Some(api_token()) };
+        let endpoint_val = if endpoint().is_empty() {
+            None
+        } else {
+            Some(endpoint())
+        };
+        let api_token_val = if api_token().is_empty() {
+            None
+        } else {
+            Some(api_token())
+        };
 
         spawn(async move {
             session.write().loading = true;
@@ -79,15 +87,26 @@ pub fn NodesPage() -> Element {
     let on_submit_edit = move |_| {
         let api_base = session().api_base.clone();
         let token = session().token.clone().unwrap_or_default();
-        let node_id = editing_node().as_ref().map(|n| n.id.clone()).unwrap_or_default();
-        
+        let node_id = editing_node()
+            .as_ref()
+            .map(|n| n.id.clone())
+            .unwrap_or_default();
+
         let name_val = Some(name());
         let region_val = Some(region());
         let cpu_val = Some(cpu().parse::<i64>().unwrap_or(0));
         let ram_val = Some(ram().parse::<i64>().unwrap_or(0));
         let storage_val = Some(storage().parse::<i64>().unwrap_or(0));
-        let endpoint_val = if endpoint().is_empty() { None } else { Some(endpoint()) };
-        let api_token_val = if api_token().is_empty() { None } else { Some(api_token()) };
+        let endpoint_val = if endpoint().is_empty() {
+            None
+        } else {
+            Some(endpoint())
+        };
+        let api_token_val = if api_token().is_empty() {
+            None
+        } else {
+            Some(api_token())
+        };
 
         spawn(async move {
             session.write().loading = true;
@@ -147,73 +166,73 @@ pub fn NodesPage() -> Element {
                 div { class: "modal-overlay",
                     div { class: "modal-content",
                         h3 { "添加新节点" }
-                        div { 
+                        div {
                             div { class: "form-group",
                                 label { "节点名称" }
-                                input { 
+                                input {
                                     value: "{name}",
                                     oninput: move |evt| name.set(evt.value()),
-                                    required: true, 
-                                    placeholder: "My Node 01" 
+                                    required: true,
+                                    placeholder: "My Node 01"
                                 }
                             }
                             div { class: "form-group",
                                 label { "地区" }
-                                input { 
+                                input {
                                     value: "{region}",
                                     oninput: move |evt| region.set(evt.value()),
-                                    required: true, 
-                                    placeholder: "US-West" 
+                                    required: true,
+                                    placeholder: "US-West"
                                 }
                             }
                             div { class: "form-group",
                                 label { "CPU 核心" }
-                                input { 
+                                input {
                                     value: "{cpu}",
                                     oninput: move |evt| cpu.set(evt.value()),
-                                    r#type: "number", 
-                                    required: true, 
+                                    r#type: "number",
+                                    required: true,
                                 }
                             }
                             div { class: "form-group",
                                 label { "内存 (MB)" }
-                                input { 
+                                input {
                                     value: "{ram}",
                                     oninput: move |evt| ram.set(evt.value()),
-                                    r#type: "number", 
-                                    required: true, 
+                                    r#type: "number",
+                                    required: true,
                                 }
                             }
                             div { class: "form-group",
                                 label { "存储 (GB)" }
-                                input { 
+                                input {
                                     value: "{storage}",
                                     oninput: move |evt| storage.set(evt.value()),
-                                    r#type: "number", 
-                                    required: true, 
+                                    r#type: "number",
+                                    required: true,
                                 }
                             }
                             div { class: "form-group",
                                 label { "API 端点 (可选)" }
-                                input { 
+                                input {
                                     value: "{endpoint}",
                                     oninput: move |evt| endpoint.set(evt.value()),
-                                    placeholder: "https://pve.example.com:8006/api2/json" 
+                                    placeholder: "https://pve.example.com:8006/api2/json"
                                 }
                             }
                             div { class: "form-group",
                                 label { "API 令牌 (可选)" }
-                                input { 
+                                input {
                                     value: "{api_token}",
                                     oninput: move |evt| api_token.set(evt.value()),
-                                    placeholder: "USER@PVE!TOKENID=SECRET" 
+                                    placeholder: "USER@PVE!TOKENID=SECRET"
                                 }
                             }
                             div { class: "modal-actions",
-                                button { 
-                                    class: "btn-primary", 
+                                button {
+                                    class: "btn-primary",
                                     onclick: on_submit_add,
-                                    "提交" 
+                                    "提交"
                                 }
                                 button {
                                     r#type: "button",
@@ -231,69 +250,69 @@ pub fn NodesPage() -> Element {
                 div { class: "modal-overlay",
                     div { class: "modal-content",
                         h3 { "编辑节点: {node.name}" }
-                        div { 
+                        div {
                             div { class: "form-group",
                                 label { "节点名称" }
-                                input { 
+                                input {
                                     value: "{name}",
                                     oninput: move |evt| name.set(evt.value()),
-                                    required: true, 
+                                    required: true,
                                 }
                             }
                             div { class: "form-group",
                                 label { "地区" }
-                                input { 
+                                input {
                                     value: "{region}",
                                     oninput: move |evt| region.set(evt.value()),
-                                    required: true, 
+                                    required: true,
                                 }
                             }
                             div { class: "form-group",
                                 label { "CPU 核心" }
-                                input { 
+                                input {
                                     value: "{cpu}",
                                     oninput: move |evt| cpu.set(evt.value()),
-                                    r#type: "number", 
-                                    required: true, 
+                                    r#type: "number",
+                                    required: true,
                                 }
                             }
                             div { class: "form-group",
                                 label { "内存 (MB)" }
-                                input { 
+                                input {
                                     value: "{ram}",
                                     oninput: move |evt| ram.set(evt.value()),
-                                    r#type: "number", 
-                                    required: true, 
+                                    r#type: "number",
+                                    required: true,
                                 }
                             }
                             div { class: "form-group",
                                 label { "存储 (GB)" }
-                                input { 
+                                input {
                                     value: "{storage}",
                                     oninput: move |evt| storage.set(evt.value()),
-                                    r#type: "number", 
-                                    required: true, 
+                                    r#type: "number",
+                                    required: true,
                                 }
                             }
                             div { class: "form-group",
                                 label { "API 端点" }
-                                input { 
+                                input {
                                     value: "{endpoint}",
                                     oninput: move |evt| endpoint.set(evt.value()),
                                 }
                             }
                             div { class: "form-group",
                                 label { "API 令牌" }
-                                input { 
+                                input {
                                     value: "{api_token}",
                                     oninput: move |evt| api_token.set(evt.value()),
                                 }
                             }
                             div { class: "modal-actions",
-                                button { 
-                                    class: "btn-primary", 
+                                button {
+                                    class: "btn-primary",
                                     onclick: on_submit_edit,
-                                    "保存" 
+                                    "保存"
                                 }
                                 button {
                                     r#type: "button",
@@ -332,7 +351,7 @@ pub fn NodesPage() -> Element {
                                             storage.set(n.storage_gb_total.to_string());
                                             endpoint.set(n.api_endpoint.clone().unwrap_or_default());
                                             api_token.set(n.api_token.clone().unwrap_or_default());
-                                            
+
                                             editing_node.set(Some(n));
                                             show_add_form.set(false);
                                         }

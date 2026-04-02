@@ -1,6 +1,6 @@
-use dioxus::prelude::*;
-use crate::models::AdminSessionState;
 use crate::api;
+use crate::models::AdminSessionState;
+use dioxus::prelude::*;
 
 #[component]
 pub fn InstancesPage() -> Element {
@@ -9,7 +9,7 @@ pub fn InstancesPage() -> Element {
     let refresh_instances = move |_| {
         let api_base = session().api_base.clone();
         let token = session().token.clone().unwrap_or_default();
-        
+
         spawn(async move {
             session.write().loading = true;
             match api::get_instances(&api_base, &token).await {

@@ -1,10 +1,8 @@
-
 use crate::api;
 
 use crate::models::Route;
 
 use dioxus::prelude::*;
-
 
 mod auth;
 
@@ -12,15 +10,11 @@ mod dashboard;
 
 mod public;
 
-
 pub use auth::LoginPage;
 
-pub use dashboard::{
-    BalancePage, InstanceDetailPage, ProfilePage, ServicesPage, TicketsPage,
-};
+pub use dashboard::{BalancePage, InstanceDetailPage, ProfilePage, ServicesPage, TicketsPage};
 
 pub use public::{OrderPage, StorefrontPage};
-
 
 #[component]
 pub fn App() -> Element {

@@ -1,6 +1,6 @@
-use dioxus::prelude::*;
-use crate::models::{AdminSessionState, GuestUpdateRequest};
 use crate::api;
+use crate::models::{AdminSessionState, GuestUpdateRequest};
+use dioxus::prelude::*;
 
 #[component]
 pub fn GuestsPage() -> Element {
@@ -24,7 +24,9 @@ pub fn GuestsPage() -> Element {
         let token = session().token.clone().unwrap_or_default();
         spawn(async move {
             session.write().loading = true;
-            let payload = GuestUpdateRequest { disabled: next_disabled };
+            let payload = GuestUpdateRequest {
+                disabled: next_disabled,
+            };
             match api::update_guest(&api_base, &token, &user_id, &payload).await {
                 Ok(_) => {
                     session.write().notice = Some("Guest 配置更新成功".to_string());

@@ -1,9 +1,10 @@
-use reqwest::Client;
 use crate::models::{
-    AuthPayload, AuthTokenResponse, AuthProfileResponse, NodeItem, NodeCreateRequest, NodeUpdateRequest,
-    InstanceItem, AdminPlanItem, AdminPlanUpdateRequest, GuestItem, GuestUpdateRequest, TicketItem,
-    TicketStatusUpdateRequest, TicketReplyRequest,
+    AdminPlanCreateRequest, AdminPlanItem, AdminPlanUpdateRequest, AuthPayload,
+    AuthProfileResponse, AuthTokenResponse, GuestItem, GuestUpdateRequest, InstanceItem,
+    NodeCreateRequest, NodeItem, NodeUpdateRequest, TicketItem, TicketReplyRequest,
+    TicketStatusUpdateRequest,
 };
+use reqwest::Client;
 
 pub fn default_api_base() -> String {
     option_env!("ADMIN_API_BASE_URL")
@@ -13,7 +14,8 @@ pub fn default_api_base() -> String {
 
 pub async fn login(api_base: &str, payload: &AuthPayload) -> Result<AuthTokenResponse, String> {
     let client = Client::new();
-    let resp = client.post(&format!("{api_base}/api/auth/login"))
+    let resp = client
+        .post(&format!("{api_base}/api/auth/login"))
         .json(payload)
         .send()
         .await
@@ -30,7 +32,8 @@ pub async fn login(api_base: &str, payload: &AuthPayload) -> Result<AuthTokenRes
 
 pub async fn get_profile(api_base: &str, token: &str) -> Result<AuthProfileResponse, String> {
     let client = Client::new();
-    let resp = client.get(&format!("{api_base}/api/auth/me"))
+    let resp = client
+        .get(&format!("{api_base}/api/auth/me"))
         .header("Authorization", &format!("Bearer {token}"))
         .send()
         .await
@@ -47,7 +50,8 @@ pub async fn get_profile(api_base: &str, token: &str) -> Result<AuthProfileRespo
 
 pub async fn get_nodes(api_base: &str, token: &str) -> Result<Vec<NodeItem>, String> {
     let client = Client::new();
-    let resp = client.get(&format!("{api_base}/api/admin/nodes"))
+    let resp = client
+        .get(&format!("{api_base}/api/admin/nodes"))
         .header("Authorization", &format!("Bearer {token}"))
         .send()
         .await
@@ -68,7 +72,8 @@ pub async fn create_node(
     payload: &NodeCreateRequest,
 ) -> Result<NodeItem, String> {
     let client = Client::new();
-    let resp = client.post(&format!("{api_base}/api/admin/nodes"))
+    let resp = client
+        .post(&format!("{api_base}/api/admin/nodes"))
         .header("Authorization", &format!("Bearer {token}"))
         .json(payload)
         .send()
@@ -90,7 +95,8 @@ pub async fn update_node(
     payload: &NodeUpdateRequest,
 ) -> Result<NodeItem, String> {
     let client = Client::new();
-    let resp = client.patch(&format!("{api_base}/api/admin/nodes/{node_id}"))
+    let resp = client
+        .patch(&format!("{api_base}/api/admin/nodes/{node_id}"))
         .header("Authorization", &format!("Bearer {token}"))
         .json(payload)
         .send()
@@ -107,7 +113,8 @@ pub async fn update_node(
 
 pub async fn get_instances(api_base: &str, token: &str) -> Result<Vec<InstanceItem>, String> {
     let client = Client::new();
-    let resp = client.get(&format!("{api_base}/api/admin/instances"))
+    let resp = client
+        .get(&format!("{api_base}/api/admin/instances"))
         .header("Authorization", &format!("Bearer {token}"))
         .send()
         .await
@@ -124,7 +131,8 @@ pub async fn get_instances(api_base: &str, token: &str) -> Result<Vec<InstanceIt
 
 pub async fn get_plans(api_base: &str, token: &str) -> Result<Vec<AdminPlanItem>, String> {
     let client = Client::new();
-    let resp = client.get(&format!("{api_base}/api/admin/plans"))
+    let resp = client
+        .get(&format!("{api_base}/api/admin/plans"))
         .header("Authorization", &format!("Bearer {token}"))
         .send()
         .await
@@ -139,6 +147,28 @@ pub async fn get_plans(api_base: &str, token: &str) -> Result<Vec<AdminPlanItem>
         .map_err(|e| format!("Failed to parse plans: {e}"))
 }
 
+pub async fn create_plan(
+    api_base: &str,
+    token: &str,
+    payload: &AdminPlanCreateRequest,
+) -> Result<AdminPlanItem, String> {
+    let client = Client::new();
+    let resp = client
+        .post(&format!("{api_base}/api/admin/plans"))
+        .header("Authorization", &format!("Bearer {token}"))
+        .json(payload)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Create failed: {}", resp.status()));
+    }
+    resp.json::<AdminPlanItem>()
+        .await
+        .map_err(|e| format!("Failed to parse response: {e}"))
+}
+
 pub async fn update_plan(
     api_base: &str,
     token: &str,
@@ -146,7 +176,8 @@ pub async fn update_plan(
     payload: &AdminPlanUpdateRequest,
 ) -> Result<(), String> {
     let client = Client::new();
-    let resp = client.patch(&format!("{api_base}/api/admin/plans/{plan_id}"))
+    let resp = client
+        .patch(&format!("{api_base}/api/admin/plans/{plan_id}"))
         .header("Authorization", &format!("Bearer {token}"))
         .json(payload)
         .send()
@@ -161,7 +192,8 @@ pub async fn update_plan(
 
 pub async fn get_guests(api_base: &str, token: &str) -> Result<Vec<GuestItem>, String> {
     let client = Client::new();
-    let resp = client.get(&format!("{api_base}/api/admin/guests"))
+    let resp = client
+        .get(&format!("{api_base}/api/admin/guests"))
         .header("Authorization", &format!("Bearer {token}"))
         .send()
         .await
@@ -183,7 +215,8 @@ pub async fn update_guest(
     payload: &GuestUpdateRequest,
 ) -> Result<(), String> {
     let client = Client::new();
-    let resp = client.patch(&format!("{api_base}/api/admin/guests/{user_id}"))
+    let resp = client
+        .patch(&format!("{api_base}/api/admin/guests/{user_id}"))
         .header("Authorization", &format!("Bearer {token}"))
         .json(payload)
         .send()
@@ -198,7 +231,8 @@ pub async fn update_guest(
 
 pub async fn get_tickets(api_base: &str, token: &str) -> Result<Vec<TicketItem>, String> {
     let client = Client::new();
-    let resp = client.get(&format!("{api_base}/api/admin/tickets"))
+    let resp = client
+        .get(&format!("{api_base}/api/admin/tickets"))
         .header("Authorization", &format!("Bearer {token}"))
         .send()
         .await
@@ -220,7 +254,8 @@ pub async fn update_ticket_status(
     payload: &TicketStatusUpdateRequest,
 ) -> Result<(), String> {
     let client = Client::new();
-    let resp = client.patch(&format!("{api_base}/api/admin/tickets/{ticket_id}/status"))
+    let resp = client
+        .patch(&format!("{api_base}/api/admin/tickets/{ticket_id}/status"))
         .header("Authorization", &format!("Bearer {token}"))
         .json(payload)
         .send()
@@ -240,7 +275,8 @@ pub async fn reply_ticket(
     payload: &TicketReplyRequest,
 ) -> Result<(), String> {
     let client = Client::new();
-    let resp = client.post(&format!("{api_base}/api/admin/tickets/{ticket_id}/reply"))
+    let resp = client
+        .post(&format!("{api_base}/api/admin/tickets/{ticket_id}/reply"))
         .header("Authorization", &format!("Bearer {token}"))
         .json(payload)
         .send()

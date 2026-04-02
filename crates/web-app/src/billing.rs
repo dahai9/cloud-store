@@ -8,6 +8,61 @@ use serde::Serialize;
 use tracing::error;
 
 #[derive(Serialize)]
+pub struct PublicPlanItem {
+    pub id: String,
+    pub code: String,
+    pub name: String,
+    pub monthly_price: String,
+    pub memory_mb: i64,
+    pub storage_gb: i64,
+    pub cpu_cores: i64,
+    pub bandwidth_mbps: i64,
+    pub traffic_gb: i64,
+    pub max_inventory: Option<i64>,
+    pub sold_inventory: i64,
+}
+
+pub async fn list_public_plans(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<PublicPlanItem>>, (StatusCode, &'static str)> {
+    let rows = sqlx::query_as::<_, (String, String, String, String, i64, i64, i64, i64, i64, Option<i64>, i64)>(
+        "SELECT id, code, name, CAST(monthly_price AS TEXT), memory_mb, storage_gb, cpu_cores, bandwidth_mbps, traffic_gb, max_inventory, sold_inventory FROM nat_plans WHERE active = 1 ORDER BY monthly_price ASC",
+    )
+    .fetch_all(&state.db)
+    .await
+    .map_err(|err| {
+        error!(error = %err, "failed to query public plans");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to load plans",
+        )
+    })?;
+
+    let items = rows
+        .into_iter()
+        .map(
+            |(id, code, name, monthly_price, memory_mb, storage_gb, cpu_cores, bandwidth_mbps, traffic_gb, max_inventory, sold_inventory)| {
+                PublicPlanItem {
+                    id,
+                    code,
+                    name,
+                    monthly_price,
+                    memory_mb,
+                    storage_gb,
+                    cpu_cores,
+                    bandwidth_mbps,
+                    traffic_gb,
+                    max_inventory,
+                    sold_inventory,
+                }
+            },
+        )
+        .collect();
+
+    Ok(Json(items))
+}
+
+#[derive(Serialize)]
 pub struct InvoiceItem {
     pub id: String,
     pub amount: String,

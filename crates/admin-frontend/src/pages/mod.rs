@@ -1,12 +1,12 @@
-use dioxus::prelude::*;
-use crate::models::{Route, AdminSessionState};
 use crate::api;
+use crate::models::{AdminSessionState, Route};
+use dioxus::prelude::*;
 
-mod login;
 mod dashboard;
+mod login;
 
-pub use login::LoginPage;
 pub use dashboard::*;
+pub use login::LoginPage;
 
 #[component]
 pub fn App() -> Element {

@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
 
+pub const DEFAULT_OS_TEMPLATE: &str = "debian/13";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum UserRole {
     User,
@@ -62,6 +64,9 @@ pub struct NatPlan {
     pub name: String,
     pub memory_mb: i32,
     pub storage_gb: i32,
+    pub cpu_cores: i32,
+    pub bandwidth_mbps: i32,
+    pub traffic_gb: i32,
     pub monthly_price: Decimal,
     pub active: bool,
 }

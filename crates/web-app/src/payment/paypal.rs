@@ -489,10 +489,7 @@ async fn ensure_inventory_available(
     })?;
 
     if available_capacity <= 0 {
-        warn!(
-            plan_id = plan_id,
-            "inventory unavailable for new payment"
-        );
+        warn!(plan_id = plan_id, "inventory unavailable for new payment");
         return Err((StatusCode::CONFLICT, "inventory unavailable"));
     }
 

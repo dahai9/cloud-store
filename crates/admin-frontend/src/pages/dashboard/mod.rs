@@ -1,24 +1,24 @@
+use crate::models::{AdminSessionState, Route};
 use dioxus::prelude::*;
-use crate::models::{Route, AdminSessionState};
 
-mod overview;
-mod nodes;
-mod instances;
-mod plans;
 mod guests;
+mod instances;
+mod nodes;
+mod overview;
+mod plans;
 mod tickets;
 
-pub use overview::OverviewPage;
-pub use nodes::NodesPage;
-pub use instances::InstancesPage;
-pub use plans::PlansPage;
 pub use guests::GuestsPage;
+pub use instances::InstancesPage;
+pub use nodes::NodesPage;
+pub use overview::OverviewPage;
+pub use plans::PlansPage;
 pub use tickets::TicketsPage;
 
 #[component]
 pub fn DashboardLayout() -> Element {
     let mut session = use_context::<Signal<AdminSessionState>>();
-    
+
     // Redirect if not logged in
     if session().token.is_none() {
         return rsx! {

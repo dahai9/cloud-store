@@ -1,7 +1,7 @@
 use crate::models::{
     ActionRequest, AuthPayload, AuthProfileResponse, AuthTokenResponse, AuthTransportRisk,
     ConsoleToken, InstanceAction, InstanceItem, InstanceMetrics, InvoiceItem,
-    PayPalCreateOrderRequest, PayPalCreateOrderResponse, SessionState, TicketItem,
+    PayPalCreateOrderRequest, PayPalCreateOrderResponse, SessionState, TicketItem, PublicPlanItem,
 };
 
 use reqwest::Client;
@@ -15,6 +15,22 @@ pub fn default_api_base() -> String {
     option_env!("API_BASE_URL")
         .unwrap_or("http://127.0.0.1:8081")
         .to_string()
+}
+
+pub async fn get_public_plans(api_base: &str) -> Result<Vec<PublicPlanItem>, String> {
+    let client = Client::new();
+    let resp = client.get(&format!("{api_base}/api/plans"))
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Failed to load plans: {}", resp.status()));
+    }
+
+    resp.json::<Vec<PublicPlanItem>>()
+        .await
+        .map_err(|e| format!("Parse error: {e}"))
 }
 
 pub fn auth_transport_risk(api_base: &str) -> AuthTransportRisk {
@@ -106,8 +122,9 @@ pub async fn authenticate_and_load(
 
     let client = Client::new();
     let url = format!("{api_base}/api/auth/{endpoint}");
-    
-    let resp = client.post(&url)
+
+    let resp = client
+        .post(&url)
         .json(&auth)
         .send()
         .await
@@ -180,7 +197,8 @@ pub async fn create_paypal_checkout(
 
     let client = Client::new();
     let url = format!("{api_base}/api/payment/paypal/create");
-    let resp = client.post(&url)
+    let resp = client
+        .post(&url)
         .header("Authorization", &format!("Bearer {token}"))
         .json(&payload)
         .send()
@@ -217,7 +235,8 @@ pub async fn retry_paypal_invoice(
 
     let client = Client::new();
     let url = format!("{api_base}/api/payment/paypal/retry/{invoice_id}");
-    let resp = client.post(&url)
+    let resp = client
+        .post(&url)
         .header("Authorization", &format!("Bearer {token}"))
         .send()
         .await
@@ -240,7 +259,8 @@ pub async fn retry_paypal_invoice(
 async fn fetch_profile(api_base: &str, token: &str) -> Result<AuthProfileResponse, String> {
     let client = Client::new();
     let url = format!("{api_base}/api/auth/me");
-    let resp = client.get(&url)
+    let resp = client
+        .get(&url)
         .header("Authorization", &format!("Bearer {token}"))
         .send()
         .await
@@ -261,7 +281,8 @@ async fn fetch_profile(api_base: &str, token: &str) -> Result<AuthProfileRespons
 async fn fetch_invoices(api_base: &str, token: &str) -> Result<Vec<InvoiceItem>, String> {
     let client = Client::new();
     let url = format!("{api_base}/api/invoices");
-    let resp = client.get(&url)
+    let resp = client
+        .get(&url)
         .header("Authorization", &format!("Bearer {token}"))
         .send()
         .await
@@ -282,7 +303,8 @@ async fn fetch_invoices(api_base: &str, token: &str) -> Result<Vec<InvoiceItem>,
 async fn fetch_tickets(api_base: &str, token: &str) -> Result<Vec<TicketItem>, String> {
     let client = Client::new();
     let url = format!("{api_base}/api/tickets");
-    let resp = client.get(&url)
+    let resp = client
+        .get(&url)
         .header("Authorization", &format!("Bearer {token}"))
         .send()
         .await

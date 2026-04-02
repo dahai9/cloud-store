@@ -7,6 +7,9 @@ license.workspace = true
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
+rcgen = "0.14.7"
+reqwest = { workspace = true, features = ["json", "rustls-tls"] }
 serde.workspace = true
+serde_json.workspace = true
 shared-domain = { path = "../shared-domain" }
 uuid.workspace = true

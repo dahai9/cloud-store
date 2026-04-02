@@ -1,4 +1,3 @@
-
 use crate::pages::{
     BalancePage, InstanceDetailPage, LoginPage, OrderPage, ProfilePage, ServicesPage,
     StorefrontPage, TicketsPage,
@@ -7,7 +6,6 @@ use crate::pages::{
 use dioxus::prelude::*;
 
 use serde::{Deserialize, Serialize};
-
 
 #[derive(Clone, Routable, Debug, PartialEq)]
 pub enum Route {
@@ -32,7 +30,6 @@ pub enum Route {
     InstanceDetailPage { id: String },
 }
 
-
 #[derive(Clone, Copy, PartialEq)]
 pub enum DashboardTab {
     Profile,
@@ -41,41 +38,20 @@ pub enum DashboardTab {
     Balance,
 }
 
-
-#[derive(Clone, Copy)]
-pub struct ProductPlan {
-    pub code: &'static str,
-    pub name: &'static str,
-    pub spec: &'static str,
-    pub monthly_price: &'static str,
-    pub badge: &'static str,
+#[derive(Clone, Deserialize, PartialEq)]
+pub struct PublicPlanItem {
+    pub id: String,
+    pub code: String,
+    pub name: String,
+    pub monthly_price: String,
+    pub memory_mb: i64,
+    pub storage_gb: i64,
+    pub cpu_cores: i64,
+    pub bandwidth_mbps: i64,
+    pub traffic_gb: i64,
+    pub max_inventory: Option<i64>,
+    pub sold_inventory: i64,
 }
-
-
-pub const PLANS: [ProductPlan; 3] = [
-    ProductPlan {
-        code: "nat-mini",
-        name: "NAT Mini",
-        spec: "1GB RAM / 50GB SSD / Shared NAT",
-        monthly_price: "$5.99",
-        badge: "Starter",
-    },
-    ProductPlan {
-        code: "nat-standard",
-        name: "NAT Standard",
-        spec: "1GB RAM / 50GB SSD / Better traffic priority",
-        monthly_price: "$7.99",
-        badge: "Most Popular",
-    },
-    ProductPlan {
-        code: "nat-pro",
-        name: "NAT Pro",
-        spec: "1GB RAM / 50GB SSD / Priority support",
-        monthly_price: "$9.99",
-        badge: "Business",
-    },
-];
-
 
 #[derive(Clone, Serialize)]
 pub struct AuthPayload {
@@ -83,12 +59,10 @@ pub struct AuthPayload {
     pub password: String,
 }
 
-
 #[derive(Clone, Deserialize)]
 pub struct AuthTokenResponse {
     pub token: String,
 }
-
 
 #[derive(Clone, Deserialize, Serialize)]
 pub struct AuthProfileResponse {
@@ -96,7 +70,6 @@ pub struct AuthProfileResponse {
     pub email: String,
     pub role: String,
 }
-
 
 #[derive(Clone, Deserialize)]
 pub struct InvoiceItem {
@@ -110,7 +83,6 @@ pub struct InvoiceItem {
     pub paid_at: Option<String>,
 }
 
-
 #[derive(Clone, Deserialize)]
 pub struct TicketItem {
     pub id: String,
@@ -120,12 +92,10 @@ pub struct TicketItem {
     pub status: String,
 }
 
-
 #[derive(Clone, Serialize)]
 pub struct PayPalCreateOrderRequest {
     pub plan_code: String,
 }
-
 
 #[derive(Clone, Deserialize)]
 #[allow(dead_code)]
@@ -137,7 +107,6 @@ pub struct PayPalCreateOrderResponse {
     pub amount: String,
     pub currency: String,
 }
-
 
 #[derive(Clone, Deserialize, Serialize, PartialEq)]
 pub struct InstanceItem {
@@ -178,19 +147,18 @@ pub struct ConsoleToken {
     pub token: String,
 }
 
-
 #[derive(Clone)]
 pub struct SessionState {
     pub api_base: String,
     pub token: Option<String>,
     pub profile: Option<AuthProfileResponse>,
+    pub public_plans: Vec<PublicPlanItem>,
     pub invoices: Vec<InvoiceItem>,
     pub tickets: Vec<TicketItem>,
     pub instances: Vec<InstanceItem>,
     pub loading: bool,
     pub error: Option<String>,
 }
-
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum AuthTransportRisk {
@@ -199,13 +167,13 @@ pub enum AuthTransportRisk {
     InsecureRemote,
 }
 
-
 impl SessionState {
     pub fn new(api_base: String) -> Self {
         Self {
             api_base,
             token: None,
             profile: None,
+            public_plans: vec![],
             invoices: vec![],
             tickets: vec![],
             instances: vec![],

@@ -12,13 +12,38 @@ pub struct AdminPlanItem {
     pub code: String,
     pub name: String,
     pub monthly_price: String,
+    pub memory_mb: i64,
+    pub storage_gb: i64,
+    pub cpu_cores: i64,
+    pub bandwidth_mbps: i64,
+    pub traffic_gb: i64,
     pub active: bool,
     pub max_inventory: Option<i64>,
     pub sold_inventory: i64,
 }
 
 #[derive(Deserialize)]
+pub struct AdminPlanCreateRequest {
+    pub code: String,
+    pub name: String,
+    pub monthly_price: String,
+    pub memory_mb: i64,
+    pub storage_gb: i64,
+    pub cpu_cores: i64,
+    pub bandwidth_mbps: i64,
+    pub traffic_gb: i64,
+}
+
+#[derive(Deserialize)]
 pub struct AdminPlanUpdateRequest {
+    pub code: Option<String>,
+    pub name: Option<String>,
+    pub monthly_price: Option<String>,
+    pub memory_mb: Option<i64>,
+    pub storage_gb: Option<i64>,
+    pub cpu_cores: Option<i64>,
+    pub bandwidth_mbps: Option<i64>,
+    pub traffic_gb: Option<i64>,
     pub active: Option<bool>,
     pub max_inventory: Option<i64>,
 }
@@ -90,8 +115,8 @@ pub async fn list_plans(
 ) -> Result<Json<Vec<AdminPlanItem>>, (StatusCode, &'static str)> {
     let _ = auth::require_admin(&headers, &state).await?;
 
-    let rows = sqlx::query_as::<_, (String, String, String, String, i64, Option<i64>, i64)>(
-        "SELECT id, code, name, CAST(monthly_price AS TEXT), active, max_inventory, sold_inventory FROM nat_plans ORDER BY created_at DESC",
+    let rows = sqlx::query_as::<_, (String, String, String, String, i64, i64, i64, i64, i64, i64, Option<i64>, i64)>(
+        "SELECT id, code, name, CAST(monthly_price AS TEXT), memory_mb, storage_gb, cpu_cores, bandwidth_mbps, traffic_gb, active, max_inventory, sold_inventory FROM nat_plans ORDER BY created_at DESC",
     )
     .fetch_all(&state.db)
     .await
@@ -106,12 +131,30 @@ pub async fn list_plans(
     let items = rows
         .into_iter()
         .map(
-            |(id, code, name, monthly_price, active, max_inventory, sold_inventory)| {
+            |(
+                id,
+                code,
+                name,
+                monthly_price,
+                memory_mb,
+                storage_gb,
+                cpu_cores,
+                bandwidth_mbps,
+                traffic_gb,
+                active,
+                max_inventory,
+                sold_inventory,
+            )| {
                 AdminPlanItem {
                     id,
                     code,
                     name,
                     monthly_price,
+                    memory_mb,
+                    storage_gb,
+                    cpu_cores,
+                    bandwidth_mbps,
+                    traffic_gb,
                     active: active != 0,
                     max_inventory,
                     sold_inventory,
@@ -123,6 +166,55 @@ pub async fn list_plans(
     Ok(Json(items))
 }
 
+pub async fn add_plan(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<AdminPlanCreateRequest>,
+) -> Result<Json<AdminPlanItem>, (StatusCode, &'static str)> {
+    let _ = auth::require_admin(&headers, &state).await?;
+
+    let id = uuid::Uuid::new_v4().to_string();
+    let price: f64 = payload
+        .monthly_price
+        .parse()
+        .map_err(|_| (StatusCode::BAD_REQUEST, "invalid price"))?;
+
+    sqlx::query(
+        "INSERT INTO nat_plans (id, code, name, memory_mb, storage_gb, cpu_cores, bandwidth_mbps, traffic_gb, monthly_price, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    )
+    .bind(&id)
+    .bind(&payload.code)
+    .bind(&payload.name)
+    .bind(payload.memory_mb)
+    .bind(payload.storage_gb)
+    .bind(payload.cpu_cores)
+    .bind(payload.bandwidth_mbps)
+    .bind(payload.traffic_gb)
+    .bind(price)
+    .bind(1) // default active
+    .execute(&state.db)
+    .await
+    .map_err(|err| {
+        error!(error = %err, "failed to create plan");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to create plan")
+    })?;
+
+    Ok(Json(AdminPlanItem {
+        id,
+        code: payload.code,
+        name: payload.name,
+        monthly_price: payload.monthly_price,
+        memory_mb: payload.memory_mb,
+        storage_gb: payload.storage_gb,
+        cpu_cores: payload.cpu_cores,
+        bandwidth_mbps: payload.bandwidth_mbps,
+        traffic_gb: payload.traffic_gb,
+        active: true,
+        max_inventory: None,
+        sold_inventory: 0,
+    }))
+}
+
 pub async fn update_plan(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -131,8 +223,8 @@ pub async fn update_plan(
 ) -> Result<Json<AdminPlanItem>, (StatusCode, &'static str)> {
     let _ = auth::require_admin(&headers, &state).await?;
 
-    let current = sqlx::query_as::<_, (String, String, String, String, i64, Option<i64>, i64)>(
-        "SELECT id, code, name, CAST(monthly_price AS TEXT), active, max_inventory, sold_inventory FROM nat_plans WHERE id = ? LIMIT 1",
+    let current = sqlx::query_as::<_, (String, String, String, String, i64, i64, i64, i64, i64, i64, Option<i64>, i64)>(
+        "SELECT id, code, name, CAST(monthly_price AS TEXT), memory_mb, storage_gb, cpu_cores, bandwidth_mbps, traffic_gb, active, max_inventory, sold_inventory FROM nat_plans WHERE id = ? LIMIT 1",
     )
     .bind(&plan_id)
     .fetch_optional(&state.db)
@@ -143,11 +235,22 @@ pub async fn update_plan(
     })?
     .ok_or((StatusCode::NOT_FOUND, "plan not found"))?;
 
-    let next_active = payload.active.unwrap_or(current.4 != 0);
-    let next_max_inventory = payload.max_inventory.or(current.5);
+    let next_code = payload.code.unwrap_or(current.1);
+    let next_name = payload.name.unwrap_or(current.2);
+    let next_price = payload.monthly_price.unwrap_or(current.3);
+    let price_val: f64 = next_price
+        .parse()
+        .map_err(|_| (StatusCode::BAD_REQUEST, "invalid price"))?;
+    let next_memory_mb = payload.memory_mb.unwrap_or(current.4);
+    let next_storage_gb = payload.storage_gb.unwrap_or(current.5);
+    let next_cpu_cores = payload.cpu_cores.unwrap_or(current.6);
+    let next_bandwidth_mbps = payload.bandwidth_mbps.unwrap_or(current.7);
+    let next_traffic_gb = payload.traffic_gb.unwrap_or(current.8);
+    let next_active = payload.active.unwrap_or(current.9 != 0);
+    let next_max_inventory = payload.max_inventory.or(current.10);
 
     if let Some(limit) = next_max_inventory {
-        if limit < current.6 {
+        if limit < current.11 {
             return Err((
                 StatusCode::BAD_REQUEST,
                 "max_inventory cannot be lower than sold_inventory",
@@ -155,7 +258,15 @@ pub async fn update_plan(
         }
     }
 
-    sqlx::query("UPDATE nat_plans SET active = ?, max_inventory = ? WHERE id = ?")
+    sqlx::query("UPDATE nat_plans SET code = ?, name = ?, monthly_price = ?, memory_mb = ?, storage_gb = ?, cpu_cores = ?, bandwidth_mbps = ?, traffic_gb = ?, active = ?, max_inventory = ? WHERE id = ?")
+        .bind(&next_code)
+        .bind(&next_name)
+        .bind(price_val)
+        .bind(next_memory_mb)
+        .bind(next_storage_gb)
+        .bind(next_cpu_cores)
+        .bind(next_bandwidth_mbps)
+        .bind(next_traffic_gb)
         .bind(if next_active { 1 } else { 0 })
         .bind(next_max_inventory)
         .bind(&plan_id)
@@ -168,12 +279,17 @@ pub async fn update_plan(
 
     Ok(Json(AdminPlanItem {
         id: current.0,
-        code: current.1,
-        name: current.2,
-        monthly_price: current.3,
+        code: next_code,
+        name: next_name,
+        monthly_price: next_price,
+        memory_mb: next_memory_mb,
+        storage_gb: next_storage_gb,
+        cpu_cores: next_cpu_cores,
+        bandwidth_mbps: next_bandwidth_mbps,
+        traffic_gb: next_traffic_gb,
         active: next_active,
         max_inventory: next_max_inventory,
-        sold_inventory: current.6,
+        sold_inventory: current.11,
     }))
 }
 
@@ -270,7 +386,19 @@ pub async fn list_nodes(
     let items = rows
         .into_iter()
         .map(
-            |(id, name, region, cpu_cores_total, memory_mb_total, storage_gb_total, cpu_cores_used, memory_mb_used, storage_gb_used, api_endpoint, api_token)| NodeItem {
+            |(
+                id,
+                name,
+                region,
+                cpu_cores_total,
+                memory_mb_total,
+                storage_gb_total,
+                cpu_cores_used,
+                memory_mb_used,
+                storage_gb_used,
+                api_endpoint,
+                api_token,
+            )| NodeItem {
                 id,
                 name,
                 region,
@@ -416,20 +544,25 @@ pub async fn list_instances(
     .await
     .map_err(|err| {
         error!(error = %err, "failed to list instances");
-        (StatusCode::INTERNAL_SERVER_ERROR, "failed to load instances")
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to load instances",
+        )
     })?;
 
     let items = rows
         .into_iter()
         .map(
-            |(id, user_email, node_name, plan_name, status, os_template, created_at)| InstanceItem {
-                id,
-                user_email,
-                node_name,
-                plan_name,
-                status,
-                os_template,
-                created_at,
+            |(id, user_email, node_name, plan_name, status, os_template, created_at)| {
+                InstanceItem {
+                    id,
+                    user_email,
+                    node_name,
+                    plan_name,
+                    status,
+                    os_template,
+                    created_at,
+                }
             },
         )
         .collect();

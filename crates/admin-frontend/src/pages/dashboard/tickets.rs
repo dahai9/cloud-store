@@ -1,6 +1,6 @@
-use dioxus::prelude::*;
-use crate::models::{AdminSessionState, TicketStatusUpdateRequest, TicketReplyRequest};
 use crate::api;
+use crate::models::{AdminSessionState, TicketReplyRequest, TicketStatusUpdateRequest};
+use dioxus::prelude::*;
 
 #[component]
 pub fn TicketsPage() -> Element {
@@ -30,19 +30,27 @@ pub fn TicketsPage() -> Element {
         let reply_msg = ticket_reply();
 
         spawn(async move {
-            if ticket_id.is_empty() { return; }
+            if ticket_id.is_empty() {
+                return;
+            }
             session.write().loading = true;
-            
+
             let status_payload = TicketStatusUpdateRequest { status };
-            if let Err(e) = api::update_ticket_status(&api_base, &token, &ticket_id, &status_payload).await {
+            if let Err(e) =
+                api::update_ticket_status(&api_base, &token, &ticket_id, &status_payload).await
+            {
                 session.write().error = Some(format!("更新状态失败: {e}"));
                 session.write().loading = false;
                 return;
             }
 
             if !reply_msg.trim().is_empty() {
-                let reply_payload = TicketReplyRequest { message: reply_msg.trim().to_string() };
-                if let Err(e) = api::reply_ticket(&api_base, &token, &ticket_id, &reply_payload).await {
+                let reply_payload = TicketReplyRequest {
+                    message: reply_msg.trim().to_string(),
+                };
+                if let Err(e) =
+                    api::reply_ticket(&api_base, &token, &ticket_id, &reply_payload).await
+                {
                     session.write().error = Some(format!("回复失败: {e}"));
                     session.write().loading = false;
                     return;

@@ -173,6 +173,7 @@ fn build_guest_router(app_state: AppState) -> Router {
     Router::new()
         .route("/api/health", get(health))
         .route("/api/db-health", get(db_health))
+        .route("/api/plans", get(billing::list_public_plans))
         .route("/api/auth/register", post(auth::register))
         .route("/api/auth/login", post(auth::login))
         .route("/api/auth/me", get(auth::me))
@@ -200,7 +201,10 @@ fn build_guest_router(app_state: AppState) -> Router {
         .route("/api/invoices", get(billing::list_invoices))
         .route("/api/instances", get(instances::list_instances))
         .route("/api/instances/{id}", get(instances::get_instance))
-        .route("/api/instances/{id}/action", post(instances::perform_action))
+        .route(
+            "/api/instances/{id}/action",
+            post(instances::perform_action),
+        )
         .route("/api/instances/{id}/metrics", get(instances::get_metrics))
         .route("/api/instances/{id}/console", get(instances::get_console))
         .layer(cors_layer())
@@ -218,6 +222,7 @@ fn build_admin_router(app_state: AppState) -> Router {
         .route("/api/admin/nodes/{id}", patch(admin::update_node))
         .route("/api/admin/instances", get(admin::list_instances))
         .route("/api/admin/plans", get(admin::list_plans))
+        .route("/api/admin/plans", post(admin::add_plan))
         .route("/api/admin/plans/{plan_id}", patch(admin::update_plan))
         .route("/api/admin/guests", get(admin::list_guests))
         .route("/api/admin/guests/{user_id}", patch(admin::update_guest))
