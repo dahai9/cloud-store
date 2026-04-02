@@ -9,7 +9,7 @@ use dioxus::prelude::*;
 #[component]
 pub fn LoginPage(source: Option<String>, plan: Option<String>) -> Element {
     let navigator = use_navigator();
-    let mut session = use_context::<Signal<SessionState>>();
+    let session = use_context::<Signal<SessionState>>();
     let mut email = use_signal(String::new);
     let mut password = use_signal(String::new);
     let is_checkout_flow = matches!(source.as_deref(), Some("order"));
@@ -123,12 +123,10 @@ pub fn LoginPage(source: Option<String>, plan: Option<String>) -> Element {
                     class: "btn-secondary",
                     onclick: move |_| {
                         if is_checkout_flow {
-                            navigator
-                                .push(Route::OrderPage {
-                                    plan: back_return_plan.clone(),
-                                }
-                                }
-                        }
+                            navigator.push(Route::OrderPage {
+                                plan: back_return_plan.clone(),
+                            });
+                        } else {
                             navigator.push(Route::StorefrontPage {});
                         }
                     },

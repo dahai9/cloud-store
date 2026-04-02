@@ -1,7 +1,7 @@
 
 use crate::api;
 
-use crate::models::{DashboardTab, Route, SessionState};
+use crate::models::Route;
 
 use dioxus::prelude::*;
 
@@ -16,7 +16,7 @@ mod public;
 pub use auth::LoginPage;
 
 pub use dashboard::{
-    BalancePage, DashboardShell, LoginRequiredView, ProfilePage, ServicesPage, TicketsPage,
+    BalancePage, ProfilePage, ServicesPage, TicketsPage,
 };
 
 pub use public::{OrderPage, StorefrontPage};

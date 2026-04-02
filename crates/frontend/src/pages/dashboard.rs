@@ -158,8 +158,8 @@ pub fn BalancePage() -> Element {
     let mut selected_invoice_id = use_signal(|| None::<String>);
     let mut modal_closing = use_signal(|| false);
     let mut modal_origin = use_signal(|| "50% 55%".to_string());
-    let mut payment_loading = use_signal(|| false);
-    let mut payment_error = use_signal(|| None::<String>);
+    let payment_loading = use_signal(|| false);
+    let payment_error = use_signal(|| None::<String>);
 
     if state.token.is_none() {
         return rsx! {
@@ -242,12 +242,20 @@ pub fn BalancePage() -> Element {
             match api::retry_paypal_invoice(&api_base, &token, &invoice.id).await {
                 Ok(response) => {
                     loading.set(false);
-                    if let Some(win) = web_sys::window() {
-                        if win.location().set_href(&response.approval_url).is_err() {
-                            error.set(Some("无法打开 PayPal 沙箱支付页面".to_string()));
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        if let Some(win) = web_sys::window() {
+                            if win.location().set_href(&response.approval_url).is_err() {
+                                error.set(Some("无法打开 PayPal 沙箱支付页面".to_string()));
+                            }
+                        } else {
+                            error.set(Some("浏览器窗口不可用".to_string()));
                         }
-                    } else {
-                        error.set(Some("浏览器窗口不可用".to_string()));
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        let _ = response;
+                        error.set(Some("当前平台暂不支持直接打开支付链接，请在 Web 端操作".to_string()));
                     }
                 }
                 Err(err) => {
@@ -438,27 +446,35 @@ pub fn BalancePage() -> Element {
 
 
 fn modal_origin_from_client(client_x: f64, client_y: f64) -> String {
-    let Some(win) = web_sys::window() else {
-        return "50% 55%".to_string();
-    };
+    #[cfg(target_arch = "wasm32")]
+    {
+        let Some(win) = web_sys::window() else {
+            return "50% 55%".to_string();
+        };
 
-    let viewport_width = win
-        .inner_width()
-        .ok()
-        .and_then(|value| value.as_f64())
-        .unwrap_or(1280.0)
-        .max(1.0);
-    let viewport_height = win
-        .inner_height()
-        .ok()
-        .and_then(|value| value.as_f64())
-        .unwrap_or(720.0)
-        .max(1.0);
+        let viewport_width = win
+            .inner_width()
+            .ok()
+            .and_then(|value| value.as_f64())
+            .unwrap_or(1280.0)
+            .max(1.0);
+        let viewport_height = win
+            .inner_height()
+            .ok()
+            .and_then(|value| value.as_f64())
+            .unwrap_or(720.0)
+            .max(1.0);
 
-    let x = ((client_x / viewport_width) * 100.0).clamp(8.0, 92.0);
-    let y = ((client_y / viewport_height) * 100.0).clamp(12.0, 88.0);
+        let x = ((client_x / viewport_width) * 100.0).clamp(8.0, 92.0);
+        let y = ((client_y / viewport_height) * 100.0).clamp(12.0, 88.0);
 
-    format!("{x:.2}% {y:.2}%")
+        format!("{x:.2}% {y:.2}%")
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = (client_x, client_y);
+        "50% 55%".to_string()
+    }
 }
 
 

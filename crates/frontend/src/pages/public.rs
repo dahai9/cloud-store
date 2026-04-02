@@ -6,6 +6,7 @@ use crate::models::{Route, SessionState, PLANS};
 use dioxus::prelude::*;
 
 
+#[cfg(target_arch = "wasm32")]
 use web_sys::window;
 
 
@@ -121,8 +122,8 @@ pub fn OrderPage(plan: String) -> Element {
     };
     
     let mut selected_plan = use_signal(|| default_plan);
-    let mut checkout_loading = use_signal(|| false);
-    let mut checkout_error = use_signal(|| None::<String>);
+    let checkout_loading = use_signal(|| false);
+    let checkout_error = use_signal(|| None::<String>);
 
     let selected_plan_details = PLANS
         .iter()
@@ -152,12 +153,20 @@ pub fn OrderPage(plan: String) -> Element {
             match api::create_paypal_checkout(&api_base, &token, &plan_code).await {
                 Ok(response) => {
                     loading.set(false);
-                    if let Some(win) = window() {
-                        if win.location().set_href(&response.approval_url).is_err() {
-                            error.set(Some("无法打开 PayPal 沙箱支付页面".to_string()));
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        if let Some(win) = window() {
+                            if win.location().set_href(&response.approval_url).is_err() {
+                                error.set(Some("无法打开 PayPal 沙箱支付页面".to_string()));
+                            }
+                        } else {
+                            error.set(Some("浏览器窗口不可用".to_string()));
                         }
-                    } else {
-                        error.set(Some("浏览器窗口不可用".to_string()));
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        let _ = response;
+                        error.set(Some("当前平台暂不支持直接打开支付链接，请在 Web 端操作".to_string()));
                     }
                 }
                 Err(err) => {

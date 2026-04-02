@@ -1,26 +1,18 @@
-
 use crate::models::{
     AuthPayload, AuthProfileResponse, AuthTokenResponse, AuthTransportRisk, InvoiceItem,
     PayPalCreateOrderRequest, PayPalCreateOrderResponse, SessionState, TicketItem,
 };
 
-use gloo_net::http::Request;
-
-use web_sys::window;
-
+use reqwest::Client;
 
 const AUTH_TOKEN_KEY: &str = "cloud_store.auth.token";
-
-
 const AUTH_PROFILE_KEY: &str = "cloud_store.auth.profile";
-
 
 pub fn default_api_base() -> String {
     option_env!("API_BASE_URL")
         .unwrap_or("http://127.0.0.1:8081")
         .to_string()
 }
-
 
 pub fn auth_transport_risk(api_base: &str) -> AuthTransportRisk {
     if api_base.starts_with("https://") {
@@ -31,7 +23,6 @@ pub fn auth_transport_risk(api_base: &str) -> AuthTransportRisk {
         AuthTransportRisk::InsecureRemote
     }
 }
-
 
 pub fn auth_transport_notice(api_base: &str) -> Option<&'static str> {
     match auth_transport_risk(api_base) {
@@ -45,7 +36,6 @@ pub fn auth_transport_notice(api_base: &str) -> Option<&'static str> {
     }
 }
 
-
 pub fn load_initial_session() -> SessionState {
     let mut initial = SessionState::new(default_api_base());
 
@@ -57,33 +47,35 @@ pub fn load_initial_session() -> SessionState {
     initial
 }
 
-
-pub fn persist_authenticated_session(session: &SessionState) {
-    let Some(storage) = browser_storage() else {
-        return;
-    };
-
-    if let Some(token) = &session.token {
-        let _ = storage.set_item(AUTH_TOKEN_KEY, token);
-    }
-
-    if let Some(profile) = &session.profile {
-        if let Ok(serialized) = serde_json::to_string(profile) {
-            let _ = storage.set_item(AUTH_PROFILE_KEY, &serialized);
+pub fn persist_authenticated_session(_session: &SessionState) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        use web_sys::window;
+        let storage = window().and_then(|w| w.local_storage().ok()).flatten();
+        if let Some(storage) = storage {
+            if let Some(token) = &_session.token {
+                let _ = storage.set_item(AUTH_TOKEN_KEY, token);
+            }
+            if let Some(profile) = &_session.profile {
+                if let Ok(serialized) = serde_json::to_string(profile) {
+                    let _ = storage.set_item(AUTH_PROFILE_KEY, &serialized);
+                }
+            }
         }
     }
 }
 
-
 pub fn clear_persisted_session() {
-    let Some(storage) = browser_storage() else {
-        return;
-    };
-
-    let _ = storage.remove_item(AUTH_TOKEN_KEY);
-    let _ = storage.remove_item(AUTH_PROFILE_KEY);
+    #[cfg(target_arch = "wasm32")]
+    {
+        use web_sys::window;
+        let storage = window().and_then(|w| w.local_storage().ok()).flatten();
+        if let Some(storage) = storage {
+            let _ = storage.remove_item(AUTH_TOKEN_KEY);
+            let _ = storage.remove_item(AUTH_PROFILE_KEY);
+        }
+    }
 }
-
 
 pub async fn authenticate_and_load(
     api_base: &str,
@@ -109,16 +101,16 @@ pub async fn authenticate_and_load(
         password: password.to_string(),
     };
 
+    let client = Client::new();
     let url = format!("{api_base}/api/auth/{endpoint}");
-    let resp = Request::post(&url)
-        .header("Content-Type", "application/json")
+    
+    let resp = client.post(&url)
         .json(&auth)
-        .map_err(|e| format!("failed to build auth request: {e}"))?
         .send()
         .await
         .map_err(|e| format!("request failed: {e}"))?;
 
-    if !resp.ok() {
+    if !resp.status().is_success() {
         let status = resp.status();
         let body = resp
             .text()
@@ -145,7 +137,6 @@ pub async fn authenticate_and_load(
     })
 }
 
-
 pub async fn load_authenticated_bundle(
     api_base: &str,
     token: &str,
@@ -161,7 +152,6 @@ pub async fn load_authenticated_bundle(
         tickets,
     })
 }
-
 
 pub async fn create_paypal_checkout(
     api_base: &str,
@@ -181,17 +171,16 @@ pub async fn create_paypal_checkout(
         plan_code: plan_code.to_string(),
     };
 
+    let client = Client::new();
     let url = format!("{api_base}/api/payment/paypal/create");
-    let resp = Request::post(&url)
+    let resp = client.post(&url)
         .header("Authorization", &format!("Bearer {token}"))
-        .header("Content-Type", "application/json")
         .json(&payload)
-        .map_err(|e| format!("failed to build payment request: {e}"))?
         .send()
         .await
         .map_err(|e| format!("payment request failed: {e}"))?;
 
-    if !resp.ok() {
+    if !resp.status().is_success() {
         let status = resp.status();
         let body = resp
             .text()
@@ -204,7 +193,6 @@ pub async fn create_paypal_checkout(
         .await
         .map_err(|e| format!("failed to parse payment response: {e}"))
 }
-
 
 pub async fn retry_paypal_invoice(
     api_base: &str,
@@ -220,14 +208,15 @@ pub async fn retry_paypal_invoice(
         );
     }
 
+    let client = Client::new();
     let url = format!("{api_base}/api/payment/paypal/retry/{invoice_id}");
-    let resp = Request::post(&url)
+    let resp = client.post(&url)
         .header("Authorization", &format!("Bearer {token}"))
         .send()
         .await
         .map_err(|e| format!("payment retry request failed: {e}"))?;
 
-    if !resp.ok() {
+    if !resp.status().is_success() {
         let status = resp.status();
         let body = resp
             .text()
@@ -241,16 +230,16 @@ pub async fn retry_paypal_invoice(
         .map_err(|e| format!("failed to parse retry response: {e}"))
 }
 
-
 async fn fetch_profile(api_base: &str, token: &str) -> Result<AuthProfileResponse, String> {
+    let client = Client::new();
     let url = format!("{api_base}/api/auth/me");
-    let resp = Request::get(&url)
+    let resp = client.get(&url)
         .header("Authorization", &format!("Bearer {token}"))
         .send()
         .await
         .map_err(|e| format!("failed to load profile: {e}"))?;
 
-    if !resp.ok() {
+    if !resp.status().is_success() {
         return Err(format!(
             "profile request failed with status {}",
             resp.status()
@@ -262,16 +251,16 @@ async fn fetch_profile(api_base: &str, token: &str) -> Result<AuthProfileRespons
         .map_err(|e| format!("failed to parse profile response: {e}"))
 }
 
-
 async fn fetch_invoices(api_base: &str, token: &str) -> Result<Vec<InvoiceItem>, String> {
+    let client = Client::new();
     let url = format!("{api_base}/api/invoices");
-    let resp = Request::get(&url)
+    let resp = client.get(&url)
         .header("Authorization", &format!("Bearer {token}"))
         .send()
         .await
         .map_err(|e| format!("failed to load invoices: {e}"))?;
 
-    if !resp.ok() {
+    if !resp.status().is_success() {
         return Err(format!(
             "invoice request failed with status {}",
             resp.status()
@@ -283,16 +272,16 @@ async fn fetch_invoices(api_base: &str, token: &str) -> Result<Vec<InvoiceItem>,
         .map_err(|e| format!("failed to parse invoices response: {e}"))
 }
 
-
 async fn fetch_tickets(api_base: &str, token: &str) -> Result<Vec<TicketItem>, String> {
+    let client = Client::new();
     let url = format!("{api_base}/api/tickets");
-    let resp = Request::get(&url)
+    let resp = client.get(&url)
         .header("Authorization", &format!("Bearer {token}"))
         .send()
         .await
         .map_err(|e| format!("failed to load tickets: {e}"))?;
 
-    if !resp.ok() {
+    if !resp.status().is_success() {
         return Err(format!(
             "ticket request failed with status {}",
             resp.status()
@@ -304,21 +293,21 @@ async fn fetch_tickets(api_base: &str, token: &str) -> Result<Vec<TicketItem>, S
         .map_err(|e| format!("failed to parse tickets response: {e}"))
 }
 
-
 fn load_persisted_session() -> Option<(String, AuthProfileResponse)> {
-    let storage = browser_storage()?;
-    let token = storage.get_item(AUTH_TOKEN_KEY).ok().flatten()?;
-    let profile = storage.get_item(AUTH_PROFILE_KEY).ok().flatten()?;
-    let profile = serde_json::from_str::<AuthProfileResponse>(&profile).ok()?;
-
-    Some((token, profile))
+    #[cfg(target_arch = "wasm32")]
+    {
+        use web_sys::window;
+        let storage = window().and_then(|w| w.local_storage().ok()).flatten()?;
+        let token = storage.get_item(AUTH_TOKEN_KEY).ok().flatten()?;
+        let profile = storage.get_item(AUTH_PROFILE_KEY).ok().flatten()?;
+        let profile = serde_json::from_str::<AuthProfileResponse>(&profile).ok()?;
+        Some((token, profile))
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        None
+    }
 }
-
-
-fn browser_storage() -> Option<web_sys::Storage> {
-    window()?.local_storage().ok().flatten()
-}
-
 
 pub struct BootstrapBundle {
     pub token: String,

@@ -125,6 +125,7 @@ pub struct PayPalCreateOrderRequest {
 
 
 #[derive(Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct PayPalCreateOrderResponse {
     pub order_id: String,
     pub invoice_id: String,

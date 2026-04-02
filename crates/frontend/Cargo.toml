@@ -7,8 +7,10 @@ license.workspace = true
 [dependencies]
 chrono.workspace = true
 dioxus = { workspace = true, features = ["router", "web"] }
-gloo-net = { version = "0.6", features = ["json"] }
+reqwest = { workspace = true }
 gloo-timers = { version = "0.3", features = ["futures"] }
 serde.workspace = true
 serde_json = { workspace = true }
-web-sys = { version = "0.3", features = ["Window", "Storage"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3", features = ["Window", "Storage", "Location"] }
