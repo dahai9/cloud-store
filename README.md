@@ -4,7 +4,8 @@ Rust + Dioxus fullstack system for selling and managing NAT VPS instances.
 
 ## Current Scope
 - Backend API server (Axum + SQLite)
-- Frontend Dioxus web app (run by dx)
+- Frontend Dioxus storefront (run by dx)
+- Admin Dioxus console (run by dx, isolated console)
 - Shared domain models for orders, billing, tickets, subscriptions
 - Provider adapter abstraction for VPS lifecycle operations
 - Worker skeleton for provisioning and renewal jobs
@@ -19,7 +20,9 @@ Rust + Dioxus fullstack system for selling and managing NAT VPS instances.
 5. Start optional services if needed: `docker compose up -d`.
 6. If you need Mailhog UI in development: `docker compose --profile dev-tools up -d`.
 7. Start backend API: `just serve-api` (default `APP_PORT=8081`).
-8. Start frontend app: `just serve-frontend` (runs `dx` on 8080).
+8. Start storefront app: `just serve-frontend` (runs `dx` on 8080).
+9. Start admin console: `just serve-admin-frontend` (runs `dx` on 8083).
+10. Run workspace checks: `just check`.
 
 ## Frontend / Backend Split
 - Frontend: `crates/frontend` (Dioxus web, managed by `dx`)

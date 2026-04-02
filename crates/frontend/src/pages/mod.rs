@@ -1,27 +1,27 @@
-#[cfg(target_arch = "wasm32")]
+
 use crate::api;
-#[cfg(target_arch = "wasm32")]
+
 use crate::models::{DashboardTab, Route, SessionState};
-#[cfg(target_arch = "wasm32")]
+
 use dioxus::prelude::*;
 
-#[cfg(target_arch = "wasm32")]
+
 mod auth;
-#[cfg(target_arch = "wasm32")]
+
 mod dashboard;
-#[cfg(target_arch = "wasm32")]
+
 mod public;
 
-#[cfg(target_arch = "wasm32")]
+
 pub use auth::LoginPage;
-#[cfg(target_arch = "wasm32")]
+
 pub use dashboard::{
     BalancePage, DashboardShell, LoginRequiredView, ProfilePage, ServicesPage, TicketsPage,
 };
-#[cfg(target_arch = "wasm32")]
+
 pub use public::{OrderPage, StorefrontPage};
 
-#[cfg(target_arch = "wasm32")]
+
 #[component]
 pub fn App() -> Element {
     let session = use_signal(api::load_initial_session);

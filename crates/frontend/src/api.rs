@@ -1,27 +1,27 @@
-#[cfg(target_arch = "wasm32")]
+
 use crate::models::{
     AuthPayload, AuthProfileResponse, AuthTokenResponse, AuthTransportRisk, InvoiceItem,
     PayPalCreateOrderRequest, PayPalCreateOrderResponse, SessionState, TicketItem,
 };
-#[cfg(target_arch = "wasm32")]
+
 use gloo_net::http::Request;
-#[cfg(target_arch = "wasm32")]
+
 use web_sys::window;
 
-#[cfg(target_arch = "wasm32")]
+
 const AUTH_TOKEN_KEY: &str = "cloud_store.auth.token";
 
-#[cfg(target_arch = "wasm32")]
+
 const AUTH_PROFILE_KEY: &str = "cloud_store.auth.profile";
 
-#[cfg(target_arch = "wasm32")]
+
 pub fn default_api_base() -> String {
     option_env!("API_BASE_URL")
         .unwrap_or("http://127.0.0.1:8081")
         .to_string()
 }
 
-#[cfg(target_arch = "wasm32")]
+
 pub fn auth_transport_risk(api_base: &str) -> AuthTransportRisk {
     if api_base.starts_with("https://") {
         AuthTransportRisk::Secure
@@ -32,7 +32,7 @@ pub fn auth_transport_risk(api_base: &str) -> AuthTransportRisk {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+
 pub fn auth_transport_notice(api_base: &str) -> Option<&'static str> {
     match auth_transport_risk(api_base) {
         AuthTransportRisk::Secure => None,
@@ -45,7 +45,7 @@ pub fn auth_transport_notice(api_base: &str) -> Option<&'static str> {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+
 pub fn load_initial_session() -> SessionState {
     let mut initial = SessionState::new(default_api_base());
 
@@ -57,7 +57,7 @@ pub fn load_initial_session() -> SessionState {
     initial
 }
 
-#[cfg(target_arch = "wasm32")]
+
 pub fn persist_authenticated_session(session: &SessionState) {
     let Some(storage) = browser_storage() else {
         return;
@@ -74,7 +74,7 @@ pub fn persist_authenticated_session(session: &SessionState) {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+
 pub fn clear_persisted_session() {
     let Some(storage) = browser_storage() else {
         return;
@@ -84,7 +84,7 @@ pub fn clear_persisted_session() {
     let _ = storage.remove_item(AUTH_PROFILE_KEY);
 }
 
-#[cfg(target_arch = "wasm32")]
+
 pub async fn authenticate_and_load(
     api_base: &str,
     endpoint: &str,
@@ -145,7 +145,7 @@ pub async fn authenticate_and_load(
     })
 }
 
-#[cfg(target_arch = "wasm32")]
+
 pub async fn load_authenticated_bundle(
     api_base: &str,
     token: &str,
@@ -162,7 +162,7 @@ pub async fn load_authenticated_bundle(
     })
 }
 
-#[cfg(target_arch = "wasm32")]
+
 pub async fn create_paypal_checkout(
     api_base: &str,
     token: &str,
@@ -205,7 +205,7 @@ pub async fn create_paypal_checkout(
         .map_err(|e| format!("failed to parse payment response: {e}"))
 }
 
-#[cfg(target_arch = "wasm32")]
+
 pub async fn retry_paypal_invoice(
     api_base: &str,
     token: &str,
@@ -241,7 +241,7 @@ pub async fn retry_paypal_invoice(
         .map_err(|e| format!("failed to parse retry response: {e}"))
 }
 
-#[cfg(target_arch = "wasm32")]
+
 async fn fetch_profile(api_base: &str, token: &str) -> Result<AuthProfileResponse, String> {
     let url = format!("{api_base}/api/auth/me");
     let resp = Request::get(&url)
@@ -262,7 +262,7 @@ async fn fetch_profile(api_base: &str, token: &str) -> Result<AuthProfileRespons
         .map_err(|e| format!("failed to parse profile response: {e}"))
 }
 
-#[cfg(target_arch = "wasm32")]
+
 async fn fetch_invoices(api_base: &str, token: &str) -> Result<Vec<InvoiceItem>, String> {
     let url = format!("{api_base}/api/invoices");
     let resp = Request::get(&url)
@@ -283,7 +283,7 @@ async fn fetch_invoices(api_base: &str, token: &str) -> Result<Vec<InvoiceItem>,
         .map_err(|e| format!("failed to parse invoices response: {e}"))
 }
 
-#[cfg(target_arch = "wasm32")]
+
 async fn fetch_tickets(api_base: &str, token: &str) -> Result<Vec<TicketItem>, String> {
     let url = format!("{api_base}/api/tickets");
     let resp = Request::get(&url)
@@ -304,7 +304,7 @@ async fn fetch_tickets(api_base: &str, token: &str) -> Result<Vec<TicketItem>, S
         .map_err(|e| format!("failed to parse tickets response: {e}"))
 }
 
-#[cfg(target_arch = "wasm32")]
+
 fn load_persisted_session() -> Option<(String, AuthProfileResponse)> {
     let storage = browser_storage()?;
     let token = storage.get_item(AUTH_TOKEN_KEY).ok().flatten()?;
@@ -314,12 +314,12 @@ fn load_persisted_session() -> Option<(String, AuthProfileResponse)> {
     Some((token, profile))
 }
 
-#[cfg(target_arch = "wasm32")]
+
 fn browser_storage() -> Option<web_sys::Storage> {
     window()?.local_storage().ok().flatten()
 }
 
-#[cfg(target_arch = "wasm32")]
+
 pub struct BootstrapBundle {
     pub token: String,
     pub profile: AuthProfileResponse,

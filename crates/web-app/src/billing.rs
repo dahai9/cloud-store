@@ -37,7 +37,7 @@ pub async fn list_invoices(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Vec<InvoiceItem>>, (StatusCode, &'static str)> {
-    let user = auth::require_auth(&headers, &state)?;
+    let user = auth::require_auth(&headers, &state).await?;
 
     expire_overdue_invoices(&state).await?;
 

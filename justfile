@@ -11,12 +11,23 @@ logs:
 
 check:
   cargo check --workspace
+  just check-frontend
+  just check-admin-frontend
 
+check-frontend:
+  cd crates/frontend && timeout 30s dx build --platform web
+
+check-admin-frontend:
+  cd crates/admin-frontend && timeout 30s dx build --platform web
+  
 serve-api:
   cargo run -p web-app
 
 serve-frontend:
   cd crates/frontend && dx serve --platform web --port 8080
+
+serve-admin-frontend:
+  cd crates/admin-frontend && dx serve --platform web --port 8083
 
 migrate:
   sqlx migrate run --database-url "$DATABASE_URL"

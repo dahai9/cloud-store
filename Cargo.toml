@@ -2,6 +2,7 @@
 members = [
     "crates/web-app",
     "crates/frontend",
+    "crates/admin-frontend",
     "crates/shared-domain",
     "crates/worker",
     "crates/provider-adapter",

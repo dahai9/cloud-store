@@ -12,6 +12,7 @@
 
 - Workspace layout:
   - `crates/frontend`: Dioxus WebAssembly frontend app. This owns routing, page composition, client session state, and browser-only UX.
+  - `crates/admin-frontend`: Dioxus WebAssembly admin console. Isolated from the main storefront but shares visual components and domain models.
   - `crates/web-app`: Axum backend API layer. This owns HTTP routes, auth, payment/webhook handling, SQLite persistence, and server-side orchestration.
   - `crates/shared-domain`: shared business models, enums, and value types that need to stay consistent across services.
   - `crates/provider-adapter`: provider abstraction for VPS lifecycle operations and any provider-specific provisioning logic.
@@ -56,9 +57,12 @@
   - `cp .env.example .env`
   - `mkdir -p data`
 - Core commands:
-  - `just check` for workspace compile checks (append `-p frontend --target wasm32-unknown-unknown` for frontend)
+  - `just check` for workspace compile checks (includes Rust workspace, frontend, and admin-frontend)
+  - `just check-frontend` specifically for the main storefront build
+  - `just check-admin-frontend` specifically for the admin console build
   - `just serve-api` to run the Axum backend
-  - `just serve-frontend` to run the Dioxus frontend
+  - `just serve-frontend` to run the Dioxus storefront
+  - `just serve-admin-frontend` to run the Dioxus admin console
   - `just fmt` for formatting
   - `just clippy` for lints
   - `just up` to start optional local services

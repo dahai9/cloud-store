@@ -1,11 +1,11 @@
-#[cfg(target_arch = "wasm32")]
+
 use crate::api;
-#[cfg(target_arch = "wasm32")]
+
 use crate::models::{AuthTransportRisk, Route, SessionState};
-#[cfg(target_arch = "wasm32")]
+
 use dioxus::prelude::*;
 
-#[cfg(target_arch = "wasm32")]
+
 #[component]
 pub fn LoginPage(source: Option<String>, plan: Option<String>) -> Element {
     let navigator = use_navigator();

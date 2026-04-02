@@ -1,13 +1,13 @@
-#[cfg(target_arch = "wasm32")]
+
 use crate::pages::{
     BalancePage, LoginPage, OrderPage, ProfilePage, ServicesPage, StorefrontPage, TicketsPage,
 };
-#[cfg(target_arch = "wasm32")]
+
 use dioxus::prelude::*;
-#[cfg(target_arch = "wasm32")]
+
 use serde::{Deserialize, Serialize};
 
-#[cfg(target_arch = "wasm32")]
+
 #[derive(Clone, Routable, Debug, PartialEq)]
 pub enum Route {
     #[route("/")]
@@ -29,7 +29,7 @@ pub enum Route {
     BalancePage {},
 }
 
-#[cfg(target_arch = "wasm32")]
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum DashboardTab {
     Profile,
@@ -38,7 +38,7 @@ pub enum DashboardTab {
     Balance,
 }
 
-#[cfg(target_arch = "wasm32")]
+
 #[derive(Clone, Copy)]
 pub struct ProductPlan {
     pub code: &'static str,
@@ -48,7 +48,7 @@ pub struct ProductPlan {
     pub badge: &'static str,
 }
 
-#[cfg(target_arch = "wasm32")]
+
 pub const PLANS: [ProductPlan; 3] = [
     ProductPlan {
         code: "nat-mini",
@@ -73,20 +73,20 @@ pub const PLANS: [ProductPlan; 3] = [
     },
 ];
 
-#[cfg(target_arch = "wasm32")]
+
 #[derive(Clone, Serialize)]
 pub struct AuthPayload {
     pub email: String,
     pub password: String,
 }
 
-#[cfg(target_arch = "wasm32")]
+
 #[derive(Clone, Deserialize)]
 pub struct AuthTokenResponse {
     pub token: String,
 }
 
-#[cfg(target_arch = "wasm32")]
+
 #[derive(Clone, Deserialize, Serialize)]
 pub struct AuthProfileResponse {
     pub user_id: String,
@@ -94,7 +94,7 @@ pub struct AuthProfileResponse {
     pub role: String,
 }
 
-#[cfg(target_arch = "wasm32")]
+
 #[derive(Clone, Deserialize)]
 pub struct InvoiceItem {
     pub id: String,
@@ -107,7 +107,7 @@ pub struct InvoiceItem {
     pub paid_at: Option<String>,
 }
 
-#[cfg(target_arch = "wasm32")]
+
 #[derive(Clone, Deserialize)]
 pub struct TicketItem {
     pub id: String,
@@ -117,13 +117,13 @@ pub struct TicketItem {
     pub status: String,
 }
 
-#[cfg(target_arch = "wasm32")]
+
 #[derive(Clone, Serialize)]
 pub struct PayPalCreateOrderRequest {
     pub plan_code: String,
 }
 
-#[cfg(target_arch = "wasm32")]
+
 #[derive(Clone, Deserialize)]
 pub struct PayPalCreateOrderResponse {
     pub order_id: String,
@@ -134,7 +134,7 @@ pub struct PayPalCreateOrderResponse {
     pub currency: String,
 }
 
-#[cfg(target_arch = "wasm32")]
+
 #[derive(Clone)]
 pub struct SessionState {
     pub api_base: String,
@@ -146,7 +146,7 @@ pub struct SessionState {
     pub error: Option<String>,
 }
 
-#[cfg(target_arch = "wasm32")]
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum AuthTransportRisk {
     Secure,
@@ -154,7 +154,7 @@ pub enum AuthTransportRisk {
     InsecureRemote,
 }
 
-#[cfg(target_arch = "wasm32")]
+
 impl SessionState {
     pub fn new(api_base: String) -> Self {
         Self {

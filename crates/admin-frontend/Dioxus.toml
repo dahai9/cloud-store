@@ -1,0 +1,10 @@
+[application]
+name = "cloud-store-admin"
+default_platform = "web"
+
+[web.app]
+title = "Cloud Store Admin"
+
+[web.watcher]
+reload_html = true
+watch_path = ["src", "assets"]

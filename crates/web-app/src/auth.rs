@@ -1,4 +1,5 @@
 use crate::AppState;
+use anyhow::{anyhow, Context};
 use argon2::password_hash::{PasswordHash, PasswordHasher, SaltString};
 use argon2::{Argon2, PasswordVerifier};
 use axum::extract::State;
@@ -10,7 +11,7 @@ use chrono::Utc;
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
-use tracing::error;
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 type HmacSha256 = Hmac<Sha256>;
@@ -105,8 +106,8 @@ pub async fn login(
 ) -> Result<Json<AuthTokenResponse>, (StatusCode, &'static str)> {
     let email = payload.email.trim().to_lowercase();
 
-    let user = sqlx::query_as::<_, (String, String, String)>(
-        "SELECT id, password_hash, role FROM users WHERE email = ? LIMIT 1",
+    let user = sqlx::query_as::<_, (String, String, String, i64)>(
+        "SELECT id, password_hash, role, COALESCE(disabled, 0) FROM users WHERE email = ? LIMIT 1",
     )
     .bind(&email)
     .fetch_optional(&state.db)
@@ -117,7 +118,12 @@ pub async fn login(
     })?
     .ok_or((StatusCode::UNAUTHORIZED, "invalid credentials"))?;
 
-    let (user_id, password_hash, role) = user;
+    let (user_id, password_hash, role, disabled) = user;
+
+    if disabled != 0 {
+        return Err((StatusCode::FORBIDDEN, "account disabled"));
+    }
+
     let is_valid = verify_password(&payload.password, &password_hash);
 
     if !is_valid {
@@ -138,7 +144,7 @@ pub async fn me(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<AuthProfileResponse>, (StatusCode, &'static str)> {
-    let user = require_auth(&headers, &state)?;
+    let user = require_auth(&headers, &state).await?;
 
     Ok(Json(AuthProfileResponse {
         user_id: user.id,
@@ -147,7 +153,7 @@ pub async fn me(
     }))
 }
 
-pub fn require_auth(
+pub async fn require_auth(
     headers: &HeaderMap,
     state: &AppState,
 ) -> Result<AuthUser, (StatusCode, &'static str)> {
@@ -160,24 +166,102 @@ pub fn require_auth(
         return Err((StatusCode::UNAUTHORIZED, "token expired"));
     }
 
+    let user = sqlx::query_as::<_, (String, String, String, i64)>(
+        "SELECT id, email, role, COALESCE(disabled, 0) FROM users WHERE id = ? LIMIT 1",
+    )
+    .bind(&claims.sub)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to load auth user",
+        )
+    })?
+    .ok_or((StatusCode::UNAUTHORIZED, "user not found"))?;
+
+    if user.3 != 0 {
+        return Err((StatusCode::FORBIDDEN, "account disabled"));
+    }
+
     Ok(AuthUser {
-        id: claims.sub,
-        email: claims.email,
-        role: claims.role,
+        id: user.0,
+        email: user.1,
+        role: user.2,
     })
 }
 
-pub fn require_admin(
+pub async fn require_admin(
     headers: &HeaderMap,
     state: &AppState,
 ) -> Result<AuthUser, (StatusCode, &'static str)> {
-    let user = require_auth(headers, state)?;
+    let user = require_auth(headers, state).await?;
 
     if user.role != "admin" {
         return Err((StatusCode::FORBIDDEN, "admin role required"));
     }
 
     Ok(user)
+}
+
+pub async fn ensure_single_admin(
+    state: &AppState,
+    bootstrap_email: Option<String>,
+    bootstrap_password: Option<String>,
+) -> anyhow::Result<()> {
+    let admin_count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users WHERE role = 'admin'")
+            .fetch_one(&state.db)
+            .await
+            .context("failed to count admin users")?;
+
+    if admin_count > 1 {
+        return Err(anyhow!(
+            "invalid state: more than one admin account exists ({admin_count})"
+        ));
+    }
+
+    if admin_count == 1 {
+        if bootstrap_email.is_some() || bootstrap_password.is_some() {
+            warn!("bootstrap admin env vars were provided, but admin already exists; skipping bootstrap");
+        }
+        return Ok(());
+    }
+
+    match (bootstrap_email, bootstrap_password) {
+        (None, None) => {
+            warn!(
+                "no admin account exists; set ADMIN_BOOTSTRAP_EMAIL and ADMIN_BOOTSTRAP_PASSWORD to create one"
+            );
+            Ok(())
+        }
+        (Some(_), None) | (None, Some(_)) => Err(anyhow!(
+            "both ADMIN_BOOTSTRAP_EMAIL and ADMIN_BOOTSTRAP_PASSWORD are required to bootstrap admin"
+        )),
+        (Some(email), Some(password)) => {
+            let email = email.trim().to_lowercase();
+            if email.is_empty() || password.trim().is_empty() {
+                return Err(anyhow!(
+                    "ADMIN_BOOTSTRAP_EMAIL and ADMIN_BOOTSTRAP_PASSWORD cannot be empty"
+                ));
+            }
+
+            let admin_id = Uuid::new_v4().to_string();
+            let password_hash = hash_password(password.trim())
+                .map_err(|_| anyhow!("failed to hash ADMIN_BOOTSTRAP_PASSWORD"))?;
+
+            sqlx::query("INSERT INTO users (id, email, password_hash, role) VALUES (?, ?, ?, 'admin')")
+                .bind(&admin_id)
+                .bind(&email)
+                .bind(&password_hash)
+                .execute(&state.db)
+                .await
+                .context("failed to create bootstrap admin")?;
+
+            info!(admin_email = %email, "bootstrap admin account created");
+            Ok(())
+        }
+    }
 }
 
 fn bearer_token(headers: &HeaderMap) -> Option<&str> {

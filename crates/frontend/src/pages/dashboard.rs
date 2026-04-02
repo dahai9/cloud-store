@@ -1,15 +1,15 @@
-#[cfg(target_arch = "wasm32")]
+
 use chrono::{DateTime, Utc};
-#[cfg(target_arch = "wasm32")]
+
 use crate::api;
-#[cfg(target_arch = "wasm32")]
+
 use crate::models::{DashboardTab, Route, SessionState};
-#[cfg(target_arch = "wasm32")]
+
 use dioxus::prelude::*;
-#[cfg(target_arch = "wasm32")]
+
 use gloo_timers::future::TimeoutFuture;
 
-#[cfg(target_arch = "wasm32")]
+
 #[component]
 pub fn ProfilePage() -> Element {
     let session = use_context::<Signal<SessionState>>();
@@ -61,7 +61,7 @@ pub fn ProfilePage() -> Element {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+
 #[component]
 pub fn ServicesPage() -> Element {
     let session = use_context::<Signal<SessionState>>();
@@ -97,7 +97,7 @@ pub fn ServicesPage() -> Element {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+
 #[component]
 pub fn TicketsPage() -> Element {
     let session = use_context::<Signal<SessionState>>();
@@ -150,7 +150,7 @@ pub fn TicketsPage() -> Element {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+
 #[component]
 pub fn BalancePage() -> Element {
     let session = use_context::<Signal<SessionState>>();
@@ -436,7 +436,7 @@ pub fn BalancePage() -> Element {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+
 fn modal_origin_from_client(client_x: f64, client_y: f64) -> String {
     let Some(win) = web_sys::window() else {
         return "50% 55%".to_string();
@@ -461,7 +461,7 @@ fn modal_origin_from_client(client_x: f64, client_y: f64) -> String {
     format!("{x:.2}% {y:.2}%")
 }
 
-#[cfg(target_arch = "wasm32")]
+
 fn invoice_status_label(invoice: &crate::models::InvoiceItem, now: DateTime<Utc>) -> String {
     if invoice.status.eq_ignore_ascii_case("open") && invoice_is_overdue(invoice, now) {
         "expired".to_string()
@@ -470,19 +470,19 @@ fn invoice_status_label(invoice: &crate::models::InvoiceItem, now: DateTime<Utc>
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+
 fn invoice_is_payable(invoice: &crate::models::InvoiceItem, now: DateTime<Utc>) -> bool {
     invoice.status.eq_ignore_ascii_case("open") && !invoice_is_overdue(invoice, now)
 }
 
-#[cfg(target_arch = "wasm32")]
+
 fn invoice_is_overdue(invoice: &crate::models::InvoiceItem, now: DateTime<Utc>) -> bool {
     chrono::DateTime::parse_from_rfc3339(&invoice.due_at)
         .map(|due_at| due_at.with_timezone(&Utc) <= now)
         .unwrap_or(false)
 }
 
-#[cfg(target_arch = "wasm32")]
+
 fn invoice_pill_class(status: &str) -> &'static str {
     if status.eq_ignore_ascii_case("paid") {
         "pill paid"
@@ -493,7 +493,7 @@ fn invoice_pill_class(status: &str) -> &'static str {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+
 #[component]
 pub fn DashboardShell(title: &'static str, active_tab: DashboardTab, children: Element) -> Element {
     let navigator = use_navigator();
@@ -567,7 +567,7 @@ pub fn DashboardShell(title: &'static str, active_tab: DashboardTab, children: E
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+
 #[component]
 pub fn LoginRequiredView() -> Element {
     let navigator = use_navigator();

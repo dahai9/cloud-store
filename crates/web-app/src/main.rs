@@ -1,3 +1,4 @@
+mod admin;
 mod auth;
 mod billing;
 mod payment;
@@ -7,7 +8,7 @@ mod tickets;
 use anyhow::Context;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
-use axum::{routing::get, routing::post, Json, Router};
+use axum::{routing::get, routing::patch, routing::post, Json, Router};
 use serde::Serialize;
 use sqlx::SqlitePool;
 use std::io::ErrorKind;
@@ -79,7 +80,7 @@ async fn list_nodes(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Vec<NodeItem>>, (StatusCode, &'static str)> {
-    let _ = auth::require_admin(&headers, &state)?;
+    let _ = auth::require_admin(&headers, &state).await?;
 
     let rows = sqlx::query_as::<_, (String, String, String, i64, i64)>(
         "SELECT id, name, region, total_capacity, used_capacity FROM nodes ORDER BY created_at DESC LIMIT 100",
@@ -146,11 +147,22 @@ fn read_bind_host() -> String {
     std::env::var("APP_HOST").unwrap_or_else(|_| "0.0.0.0".to_string())
 }
 
+fn read_admin_bind_host(default_host: &str) -> String {
+    std::env::var("ADMIN_APP_HOST").unwrap_or_else(|_| default_host.to_string())
+}
+
 fn read_bind_port() -> u16 {
     std::env::var("APP_PORT")
         .ok()
         .and_then(|value| value.parse::<u16>().ok())
         .unwrap_or(8081)
+}
+
+fn read_admin_bind_port() -> u16 {
+    std::env::var("ADMIN_APP_PORT")
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(8082)
 }
 
 fn read_env_or_default(name: &str, default_value: &str) -> String {
@@ -159,6 +171,13 @@ fn read_env_or_default(name: &str, default_value: &str) -> String {
 
 fn read_required_env_trimmed(name: &str) -> anyhow::Result<String> {
     Ok(require_env(name)?.trim().to_string())
+}
+
+fn read_optional_env_trimmed(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 async fn bind_listener(host: &str, preferred_port: u16) -> anyhow::Result<tokio::net::TcpListener> {
@@ -183,52 +202,15 @@ async fn bind_listener(host: &str, preferred_port: u16) -> anyhow::Result<tokio:
     }
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter("info")
-        .compact()
-        .init();
+fn cors_layer() -> CorsLayer {
+    CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any)
+}
 
-    let _ = dotenvy::dotenv();
-
-    let database_url = normalize_database_url(&require_env("DATABASE_URL")?)?;
-    let session_secret = require_env("SESSION_SECRET")?;
-    let paypal_client_id = read_required_env_trimmed("PAYPAL_CLIENT_ID")?;
-    let paypal_client_secret = read_required_env_trimmed("PAYPAL_CLIENT_SECRET")?;
-    let paypal_webhook_id = read_required_env_trimmed("PAYPAL_WEBHOOK_ID")?;
-    let paypal_base_url =
-        read_env_or_default("PAYPAL_BASE_URL", "https://api-m.sandbox.paypal.com");
-    let paypal_return_base_url =
-        read_env_or_default("PAYPAL_RETURN_BASE_URL", "http://127.0.0.1:8081");
-    let frontend_base_url = read_env_or_default("FRONTEND_BASE_URL", "http://127.0.0.1:8080");
-    let bind_host = read_bind_host();
-    let bind_port = read_bind_port();
-
-    info!(database_url = %database_url, "starting web-app server");
-
-    let db = SqlitePool::connect(&database_url)
-        .await
-        .context("failed to connect sqlite database")?;
-
-    sqlx::migrate!("../../migrations")
-        .run(&db)
-        .await
-        .context("failed to run database migrations")?;
-
-    let app_state = AppState {
-        db,
-        session_secret,
-        paypal_client_id,
-        paypal_client_secret,
-        paypal_webhook_id,
-        paypal_base_url,
-        paypal_return_base_url,
-        frontend_base_url,
-        http_client: reqwest::Client::new(),
-    };
-
-    let router = Router::new()
+fn build_guest_router(app_state: AppState) -> Router {
+    Router::new()
         .route("/api/health", get(health))
         .route("/api/db-health", get(db_health))
         .route("/api/auth/register", post(auth::register))
@@ -256,17 +238,110 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/api/tickets", get(tickets::list_tickets))
         .route("/api/invoices", get(billing::list_invoices))
-        .route("/api/admin/nodes", get(list_nodes))
-        .layer(
-            CorsLayer::new()
-                .allow_origin(Any)
-                .allow_methods(Any)
-                .allow_headers(Any),
-        )
-        .with_state(app_state);
+        .layer(cors_layer())
+        .with_state(app_state)
+}
 
-    let listener = bind_listener(&bind_host, bind_port).await?;
-    axum::serve(listener, router).await?;
+fn build_admin_router(app_state: AppState) -> Router {
+    Router::new()
+        .route("/api/health", get(health))
+        .route("/api/db-health", get(db_health))
+        .route("/api/auth/login", post(auth::login))
+        .route("/api/auth/me", get(auth::me))
+        .route("/api/admin/nodes", get(list_nodes))
+        .route("/api/admin/plans", get(admin::list_plans))
+        .route("/api/admin/plans/{plan_id}", patch(admin::update_plan))
+        .route("/api/admin/guests", get(admin::list_guests))
+        .route("/api/admin/guests/{user_id}", patch(admin::update_guest))
+        .route("/api/admin/tickets", get(tickets::list_tickets))
+        .route(
+            "/api/admin/tickets/{ticket_id}/status",
+            patch(tickets::admin_update_ticket_status),
+        )
+        .route(
+            "/api/admin/tickets/{ticket_id}/messages",
+            get(tickets::admin_list_ticket_messages),
+        )
+        .route(
+            "/api/admin/tickets/{ticket_id}/reply",
+            post(tickets::admin_reply_ticket),
+        )
+        .route("/api/admin/invoices", get(billing::list_invoices))
+        .layer(cors_layer())
+        .with_state(app_state)
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt()
+        .with_env_filter("info")
+        .compact()
+        .init();
+
+    let _ = dotenvy::dotenv();
+
+    let database_url = normalize_database_url(&require_env("DATABASE_URL")?)?;
+    let session_secret = require_env("SESSION_SECRET")?;
+    let paypal_client_id = read_required_env_trimmed("PAYPAL_CLIENT_ID")?;
+    let paypal_client_secret = read_required_env_trimmed("PAYPAL_CLIENT_SECRET")?;
+    let paypal_webhook_id = read_required_env_trimmed("PAYPAL_WEBHOOK_ID")?;
+    let paypal_base_url =
+        read_env_or_default("PAYPAL_BASE_URL", "https://api-m.sandbox.paypal.com");
+    let paypal_return_base_url =
+        read_env_or_default("PAYPAL_RETURN_BASE_URL", "http://127.0.0.1:8081");
+    let frontend_base_url = read_env_or_default("FRONTEND_BASE_URL", "http://127.0.0.1:8080");
+    let guest_bind_host = read_bind_host();
+    let guest_bind_port = read_bind_port();
+    let admin_bind_host = read_admin_bind_host(&guest_bind_host);
+    let admin_bind_port = read_admin_bind_port();
+    let bootstrap_admin_email = read_optional_env_trimmed("ADMIN_BOOTSTRAP_EMAIL");
+    let bootstrap_admin_password = read_optional_env_trimmed("ADMIN_BOOTSTRAP_PASSWORD");
+
+    info!(database_url = %database_url, "starting web-app server");
+
+    let db = SqlitePool::connect(&database_url)
+        .await
+        .context("failed to connect sqlite database")?;
+
+    sqlx::migrate!("../../migrations")
+        .run(&db)
+        .await
+        .context("failed to run database migrations")?;
+
+    let app_state = AppState {
+        db,
+        session_secret,
+        paypal_client_id,
+        paypal_client_secret,
+        paypal_webhook_id,
+        paypal_base_url,
+        paypal_return_base_url,
+        frontend_base_url,
+        http_client: reqwest::Client::new(),
+    };
+
+    auth::ensure_single_admin(&app_state, bootstrap_admin_email, bootstrap_admin_password)
+        .await
+        .context("failed while validating/bootstrapping single admin account")?;
+
+    let guest_router = build_guest_router(app_state.clone());
+    let admin_router = build_admin_router(app_state);
+
+    let guest_listener = bind_listener(&guest_bind_host, guest_bind_port).await?;
+    let admin_listener = bind_listener(&admin_bind_host, admin_bind_port).await?;
+
+    info!(
+        guest_host = %guest_bind_host,
+        guest_port = guest_bind_port,
+        admin_host = %admin_bind_host,
+        admin_port = admin_bind_port,
+        "starting guest and admin api listeners"
+    );
+
+    let guest_server = axum::serve(guest_listener, guest_router);
+    let admin_server = axum::serve(admin_listener, admin_router);
+
+    tokio::try_join!(guest_server, admin_server)?;
 
     let _ = routes::portal_links;
 

@@ -1,14 +1,14 @@
-#[cfg(target_arch = "wasm32")]
+
 use crate::api;
-#[cfg(target_arch = "wasm32")]
+
 use crate::models::{Route, SessionState, PLANS};
-#[cfg(target_arch = "wasm32")]
+
 use dioxus::prelude::*;
 
-#[cfg(target_arch = "wasm32")]
+
 use web_sys::window;
 
-#[cfg(target_arch = "wasm32")]
+
 #[component]
 pub fn StorefrontPage() -> Element {
     let navigator = use_navigator();
@@ -108,7 +108,7 @@ pub fn StorefrontPage() -> Element {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+
 #[component]
 pub fn OrderPage(plan: String) -> Element {
     let navigator = use_navigator();

@@ -92,10 +92,10 @@ pub async fn create_order(
     headers: axum::http::HeaderMap,
     Json(payload): Json<CreateOrderRequest>,
 ) -> Result<Json<PaypalCreateOrderResponse>, (StatusCode, &'static str)> {
-    let user = auth::require_auth(&headers, &state)?;
+    let user = auth::require_auth(&headers, &state).await?;
     let plan = load_plan(&state, &payload.plan_code).await?;
 
-    ensure_inventory_available(&state).await?;
+    ensure_inventory_available(&state, &plan.id).await?;
 
     let order_id = Uuid::new_v4();
     let invoice_id = Uuid::new_v4();
@@ -158,7 +158,7 @@ pub async fn retry_invoice_payment(
     headers: HeaderMap,
     Path(invoice_id): Path<String>,
 ) -> Result<Json<PaypalCreateOrderResponse>, (StatusCode, &'static str)> {
-    let user = auth::require_auth(&headers, &state)?;
+    let user = auth::require_auth(&headers, &state).await?;
     let record = load_invoice_payment_context(&state, &invoice_id, &user).await?;
 
     if record.status.eq_ignore_ascii_case("paid") {
@@ -248,7 +248,7 @@ pub async fn webhook(
         (StatusCode::BAD_REQUEST, "invalid webhook payload")
     })?;
 
-    verify_paypal_webhook(&state, &headers, &raw_body).await?;
+    verify_paypal_webhook(&state, &headers, raw_body).await?;
 
     if webhook_event_already_processed(&state, &event.id).await? {
         info!(event_id = %event.id, event_type = %event.event_type, "paypal webhook replay ignored");
@@ -432,7 +432,7 @@ async fn issue_paypal_checkout(
     invoice_id: &str,
     amount: &str,
 ) -> Result<PaypalCreateOrderResponse, (StatusCode, &'static str)> {
-    ensure_inventory_available(state).await?;
+    ensure_inventory_available(state, &plan.id).await?;
 
     let paypal_access_token = fetch_paypal_access_token(state).await?;
     let checkout_request =
@@ -466,7 +466,10 @@ async fn issue_paypal_checkout(
     })
 }
 
-async fn ensure_inventory_available(state: &AppState) -> Result<(), (StatusCode, &'static str)> {
+async fn ensure_inventory_available(
+    state: &AppState,
+    plan_id: &str,
+) -> Result<(), (StatusCode, &'static str)> {
     let available_capacity = sqlx::query_scalar::<_, i64>(
         "SELECT COALESCE(SUM(total_capacity - used_capacity), 0) FROM nodes WHERE active = 1",
     )
@@ -486,6 +489,28 @@ async fn ensure_inventory_available(state: &AppState) -> Result<(), (StatusCode,
             "inventory unavailable for new payment"
         );
         return Err((StatusCode::CONFLICT, "inventory unavailable"));
+    }
+
+    let plan_inventory = sqlx::query_as::<_, (Option<i64>, i64)>(
+        "SELECT max_inventory, COALESCE(sold_inventory, 0) FROM nat_plans WHERE id = ? LIMIT 1",
+    )
+    .bind(plan_id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|err| {
+        error!(error = %err, plan_id = %plan_id, "failed to query plan inventory");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to check plan inventory",
+        )
+    })?
+    .ok_or((StatusCode::NOT_FOUND, "plan not found"))?;
+
+    if let Some(limit) = plan_inventory.0 {
+        if plan_inventory.1 >= limit {
+            warn!(plan_id = %plan_id, sold_inventory = plan_inventory.1, max_inventory = limit, "plan inventory unavailable for new payment");
+            return Err((StatusCode::CONFLICT, "plan inventory unavailable"));
+        }
     }
 
     Ok(())
@@ -745,30 +770,66 @@ async fn finalize_paid_checkout(
     invoice_id: &str,
     paypal_order_id: &str,
 ) -> Result<(), (StatusCode, &'static str)> {
-    sqlx::query(
+    let mut tx = state.db.begin().await.map_err(|err| {
+        error!(error = %err, order_id = %order_id, invoice_id = %invoice_id, "failed to begin checkout transaction");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to finalize checkout",
+        )
+    })?;
+
+    let order_update = sqlx::query(
         "UPDATE orders SET status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status != 'paid'",
     )
+    .bind(order_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|err| {
+        error!(error = %err, order_id = %order_id, "failed to mark order paid");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to mark order paid",
+        )
+    })?;
+
+    if order_update.rows_affected() > 0 {
+        let plan_inventory_update = sqlx::query(
+            "UPDATE nat_plans SET sold_inventory = sold_inventory + 1 WHERE id = (SELECT plan_id FROM orders WHERE id = ?) AND (max_inventory IS NULL OR sold_inventory < max_inventory)",
+        )
         .bind(order_id)
-        .execute(&state.db)
+        .execute(&mut *tx)
         .await
         .map_err(|err| {
-            error!(error = %err, order_id = %order_id, "failed to mark order paid");
+            error!(error = %err, order_id = %order_id, "failed to update sold inventory");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to mark order paid",
+                "failed to update plan inventory",
             )
         })?;
+
+        if plan_inventory_update.rows_affected() == 0 {
+            return Err((StatusCode::CONFLICT, "plan inventory unavailable"));
+        }
+    }
 
     sqlx::query(
         "UPDATE invoices SET status = 'paid', paid_at = COALESCE(paid_at, CURRENT_TIMESTAMP), external_payment_ref = ? WHERE id = ?",
     )
     .bind(paypal_order_id)
     .bind(invoice_id)
-    .execute(&state.db)
+    .execute(&mut *tx)
     .await
     .map_err(|err| {
         error!(error = %err, invoice_id = %invoice_id, order_id = %order_id, "failed to mark invoice paid");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to mark invoice paid")
+    })?;
+
+    tx.commit().await.map_err(|err| {
+        error!(error = %err, order_id = %order_id, invoice_id = %invoice_id, "failed to commit checkout transaction");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to finalize checkout",
+        )
     })?;
 
     Ok(())
