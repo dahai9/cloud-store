@@ -50,7 +50,20 @@ esac
 # 3. Kernel module check (essential for LXC/Incus)
 modprobe vhost_vsock || true
 
-# 4. Prepare Preseed configuration
+# 4. Networking Configuration (Ensure IP Forwarding and Firewall rules)
+echo "Configuring networking..."
+sysctl -w net.ipv4.ip_forward=1
+echo "net.ipv4.ip_forward=1" > /etc/sysctl.d/99-incus-forwarding.conf
+
+# Add iptables rules if they don't exist to allow traffic through the bridge
+# This is especially important if Docker is installed as it sets FORWARD to DROP
+if command -v iptables >/dev/null; then
+    echo "Updating iptables FORWARD rules for $NETWORK_NAME..."
+    iptables -C FORWARD -i "$NETWORK_NAME" -j ACCEPT 2>/dev/null || iptables -A FORWARD -i "$NETWORK_NAME" -j ACCEPT
+    iptables -C FORWARD -o "$NETWORK_NAME" -j ACCEPT 2>/dev/null || iptables -A FORWARD -o "$NETWORK_NAME" -j ACCEPT
+fi
+
+# 5. Prepare Preseed configuration
 cat <<EOF > /tmp/incus-preseed.yaml
 config:
   core.https_address: :$INCUS_PORT
@@ -91,7 +104,7 @@ projects:
   name: default
 EOF
 
-# 5. Initialize Incus
+# 6. Initialize Incus
 echo "Initializing Incus with preseed..."
 # If already initialized, this might fail or do nothing depending on version. 
 # We use --force if supported or just pipe to init.
