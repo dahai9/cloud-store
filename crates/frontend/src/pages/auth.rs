@@ -121,12 +121,10 @@ pub fn LoginPage(source: Option<String>, plan: Option<String>) -> Element {
                     class: "btn-secondary",
                     onclick: move |_| {
                         if is_checkout_flow {
-                            navigator
-                                .push(Route::OrderPage {
-                                    plan: back_return_plan.clone(),
-                                }
-                                }
-                        }
+                            navigator.push(Route::OrderPage {
+                                plan: back_return_plan.clone(),
+                            });
+                        } else {
                             navigator.push(Route::StorefrontPage {});
                         }
                     },
