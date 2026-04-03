@@ -88,7 +88,7 @@ pub fn StorefrontPage() -> Element {
                 }
 
                 section { class: "product-grid",
-                    for (i, plan) in session().public_plans.iter().enumerate() {
+                    for (i , plan) in session().public_plans.iter().enumerate() {
                         article { class: "product-card", key: "{plan.id}",
                             div { class: "tag",
                                 if i == 0 {
@@ -100,7 +100,9 @@ pub fn StorefrontPage() -> Element {
                                 }
                             }
                             h3 { "{plan.name}" }
-                            p { "{plan.cpu_cores}C / {plan.memory_mb}MB RAM / {plan.storage_gb}GB SSD / {plan.bandwidth_mbps}Mbps / {plan.traffic_gb}GB Traffic" }
+                            p {
+                                "{plan.cpu_cores}C / {plan.memory_mb}MB RAM / {plan.storage_gb}GB SSD / {plan.bandwidth_mbps}Mbps / {format_traffic_gb(plan.traffic_gb)}"
+                            }
                             div { class: "price", "${plan.monthly_price} / month" }
                             button {
                                 class: "btn-secondary",
@@ -244,7 +246,9 @@ pub fn OrderPage(plan: String) -> Element {
                     }
 
                     if let Some(plan) = selected_plan_details {
-                        p { "Spec: {plan.cpu_cores}C / {plan.memory_mb}MB RAM / {plan.storage_gb}GB SSD / {plan.bandwidth_mbps}Mbps / {plan.traffic_gb}GB Traffic" }
+                        p {
+                            "Spec: {plan.cpu_cores}C / {plan.memory_mb}MB RAM / {plan.storage_gb}GB SSD / {plan.bandwidth_mbps}Mbps / {format_traffic_gb(plan.traffic_gb)}"
+                        }
                         p { "Monthly Price: ${plan.monthly_price}" }
                     } else {
                         p { "Loading plan details..." }
@@ -302,5 +306,13 @@ pub fn OrderPage(plan: String) -> Element {
                 }
             }
         }
+    }
+}
+
+fn format_traffic_gb(traffic_gb: i64) -> String {
+    if traffic_gb == -1 {
+        "无限流量".to_string()
+    } else {
+        format!("{traffic_gb}GB 流量")
     }
 }

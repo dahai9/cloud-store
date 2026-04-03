@@ -106,7 +106,7 @@ pub async fn perform_action(
     let user = auth::require_user(&headers, &state).await?;
 
     let row = sqlx::query_as::<_, (String, Option<String>, String, Option<String>)>(
-           "SELECT i.id, i.provider_instance_id, n.api_endpoint, n.api_token
+        "SELECT i.id, i.provider_instance_id, n.api_endpoint, n.api_token
             FROM instances i
             JOIN nodes n ON i.node_id = n.id
          WHERE i.id = ? AND i.user_id = ? LIMIT 1",
@@ -141,7 +141,7 @@ pub async fn perform_action(
 
     match payload.action {
         InstanceAction::Start => {
-            let _ = provider
+            provider
                 .start_instance(&node_conn, &provider_instance_id)
                 .await
                 .map_err(|_| {
@@ -153,14 +153,14 @@ pub async fn perform_action(
             update_status(&state, &id, InstanceStatus::Starting).await?;
         }
         InstanceAction::Stop => {
-            let _ = provider
+            provider
                 .stop_instance(&node_conn, &provider_instance_id)
                 .await
                 .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to stop instance"))?;
             update_status(&state, &id, InstanceStatus::Stopped).await?;
         }
         InstanceAction::Restart => {
-            let _ = provider
+            provider
                 .restart_instance(&node_conn, &provider_instance_id)
                 .await
                 .map_err(|_| {
@@ -173,7 +173,7 @@ pub async fn perform_action(
         }
         InstanceAction::ResetPassword { new_password } => {
             let pwd = new_password.unwrap_or_else(|| "RandomPassword123!".to_string());
-            let _ = provider
+            provider
                 .reset_password(&node_conn, &provider_instance_id, &pwd)
                 .await
                 .map_err(|_| {
@@ -185,7 +185,7 @@ pub async fn perform_action(
         }
         InstanceAction::Reinstall { os_template } => {
             let template = os_template.unwrap_or_else(|| DEFAULT_OS_TEMPLATE.to_string());
-            let _ = provider
+            provider
                 .reinstall_instance(&node_conn, &provider_instance_id, &template)
                 .await
                 .map_err(|_| {
@@ -209,7 +209,7 @@ pub async fn get_metrics(
     let user = auth::require_user(&headers, &state).await?;
 
     let row = sqlx::query_as::<_, (String, Option<String>, String, Option<String>)>(
-           "SELECT i.id, i.provider_instance_id, n.api_endpoint, n.api_token
+        "SELECT i.id, i.provider_instance_id, n.api_endpoint, n.api_token
             FROM instances i
             JOIN nodes n ON i.node_id = n.id
          WHERE i.id = ? AND i.user_id = ? LIMIT 1",
@@ -254,7 +254,7 @@ pub async fn get_console(
     let user = auth::require_user(&headers, &state).await?;
 
     let row = sqlx::query_as::<_, (String, Option<String>, String, Option<String>)>(
-           "SELECT i.id, i.provider_instance_id, n.api_endpoint, n.api_token
+        "SELECT i.id, i.provider_instance_id, n.api_endpoint, n.api_token
             FROM instances i
             JOIN nodes n ON i.node_id = n.id
          WHERE i.id = ? AND i.user_id = ? LIMIT 1",

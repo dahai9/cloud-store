@@ -8,7 +8,6 @@ mod tickets;
 
 use anyhow::Context;
 use axum::extract::State;
-use axum::http::{HeaderMap, StatusCode};
 use axum::{routing::get, routing::patch, routing::post, Json, Router};
 use serde::Serialize;
 use sqlx::SqlitePool;

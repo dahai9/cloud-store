@@ -377,7 +377,7 @@ impl ComputeProvider for IncusProvider {
             .as_str()
             .unwrap_or_default()
             .split('/')
-            .last()
+            .next_back()
             .unwrap_or_default();
         let fds = &body["metadata"]["fds"];
         let control_secret = fds["control"].as_str().unwrap_or_default();

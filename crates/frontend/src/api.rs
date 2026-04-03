@@ -1,7 +1,7 @@
 use crate::models::{
     ActionRequest, AuthPayload, AuthProfileResponse, AuthTokenResponse, AuthTransportRisk,
     ConsoleToken, InstanceAction, InstanceItem, InstanceMetrics, InvoiceItem,
-    PayPalCreateOrderRequest, PayPalCreateOrderResponse, SessionState, TicketItem, PublicPlanItem,
+    PayPalCreateOrderRequest, PayPalCreateOrderResponse, PublicPlanItem, SessionState, TicketItem,
 };
 
 use reqwest::Client;
@@ -19,7 +19,8 @@ pub fn default_api_base() -> String {
 
 pub async fn get_public_plans(api_base: &str) -> Result<Vec<PublicPlanItem>, String> {
     let client = Client::new();
-    let resp = client.get(&format!("{api_base}/api/plans"))
+    let resp = client
+        .get(format!("{api_base}/api/plans"))
         .send()
         .await
         .map_err(|e| format!("Request failed: {e}"))?;

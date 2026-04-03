@@ -80,7 +80,9 @@ pub fn ServicesPage() -> Element {
                     } else {
                         for item in &state.instances {
                             Link {
-                                to: Route::InstanceDetailPage { id: item.id.clone() },
+                                to: Route::InstanceDetailPage {
+                                    id: item.id.clone(),
+                                },
                                 article { class: "service-item",
                                     div {
                                         h4 { "{item.plan_id.to_uppercase()} - {item.id}" }
@@ -157,9 +159,8 @@ pub fn InstanceDetailPage(id: String) -> Element {
             let token = token.clone();
             spawn(async move {
                 loop {
-                    match api::fetch_instance_metrics(&api_base, &token, &id).await {
-                        Ok(data) => metrics.set(Some(data)),
-                        Err(_) => {}
+                    if let Ok(data) = api::fetch_instance_metrics(&api_base, &token, &id).await {
+                        metrics.set(Some(data));
                     }
                     TimeoutFuture::new(5000).await;
                 }
@@ -330,20 +331,20 @@ pub fn InstanceDetailPage(id: String) -> Element {
                     button {
                         class: "btn-secondary",
                         disabled: action_loading(),
-                        onclick: move |_| on_action(crate::models::InstanceAction::Reinstall { os_template: None }),
+                        onclick: move |_| on_action(crate::models::InstanceAction::Reinstall {
+                            os_template: None,
+                        }),
                         "Reinstall"
                     }
                     button {
                         class: "btn-secondary",
                         disabled: action_loading(),
-                        onclick: move |_| on_action(crate::models::InstanceAction::ResetPassword { new_password: None }),
+                        onclick: move |_| on_action(crate::models::InstanceAction::ResetPassword {
+                            new_password: None,
+                        }),
                         "Reset Password"
                     }
-                    button {
-                        class: "btn-primary",
-                        onclick: on_console,
-                        "Open Console (VNC)"
-                    }
+                    button { class: "btn-primary", onclick: on_console, "Open Console (VNC)" }
                 }
             }
         }
@@ -556,7 +557,7 @@ pub fn BalancePage() -> Element {
                                             move |event| {
                                                 modal_closing.set(false);
                                                 let coords = event.data().client_coordinates();
-                                                modal_origin.set(modal_origin_from_client(coords.x as f64, coords.y as f64));
+                                                modal_origin.set(modal_origin_from_client(coords.x, coords.y));
                                                 selected_invoice_id.set(Some(invoice_id.clone()));
                                             }
                                         },
@@ -576,7 +577,7 @@ pub fn BalancePage() -> Element {
                                                     move |event| {
                                                         modal_closing.set(false);
                                                         let coords = event.data().client_coordinates();
-                                                        modal_origin.set(modal_origin_from_client(coords.x as f64, coords.y as f64));
+                                                        modal_origin.set(modal_origin_from_client(coords.x, coords.y));
                                                         selected_invoice_id.set(Some(invoice_id.clone()));
                                                     }
                                                 },

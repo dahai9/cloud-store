@@ -77,7 +77,6 @@ async fn process_order(
 
     let order_id = Uuid::parse_str(order_id_str)?;
     let user_id = Uuid::parse_str(user_id_str)?;
-    let plan_id = Uuid::parse_str(plan_id_str)?;
 
     // 1. Mark as Provisioning
     sqlx::query(
@@ -134,7 +133,7 @@ async fn process_order(
 
     // 4. Find/Reserve NAT Port Lease
     let lease_row = sqlx::query(
-       "SELECT id, public_ip, start_port, end_port FROM nat_port_leases
+        "SELECT id, public_ip, start_port, end_port FROM nat_port_leases
         WHERE node_id = ? AND (reserved_for_order_id = ? OR reserved = 0)
          LIMIT 1",
     )

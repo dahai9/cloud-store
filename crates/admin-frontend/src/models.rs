@@ -6,6 +6,7 @@ use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Routable, Debug, PartialEq)]
+#[allow(clippy::enum_variant_names)]
 pub enum Route {
     #[layout(DashboardLayout)]
     #[route("/")]

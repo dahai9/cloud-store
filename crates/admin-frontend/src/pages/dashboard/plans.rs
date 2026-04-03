@@ -205,58 +205,94 @@ pub fn PlansPage() -> Element {
 
             if is_creating() || is_editing() {
                 div { class: "form",
-                    h3 { if is_creating() { "新增 Plan" } else { "编辑 Plan" } }
+                    h3 {
+                        if is_creating() {
+                            "新增 Plan"
+                        } else {
+                            "编辑 Plan"
+                        }
+                    }
 
                     div { class: "field",
                         label { "Code (标识)" }
-                        input { value: "{form_code()}", oninput: move |evt| form_code.set(evt.value()) }
+                        input {
+                            value: "{form_code()}",
+                            oninput: move |evt| form_code.set(evt.value()),
+                        }
                     }
                     div { class: "field",
                         label { "Name (名称)" }
-                        input { value: "{form_name()}", oninput: move |evt| form_name.set(evt.value()) }
+                        input {
+                            value: "{form_name()}",
+                            oninput: move |evt| form_name.set(evt.value()),
+                        }
                     }
                     div { class: "field",
                         label { "Price (金额 /月)" }
-                        input { value: "{form_monthly_price()}", oninput: move |evt| form_monthly_price.set(evt.value()) }
+                        input {
+                            value: "{form_monthly_price()}",
+                            oninput: move |evt| form_monthly_price.set(evt.value()),
+                        }
                     }
                     div { class: "field",
                         label { "CPU Cores (核心数)" }
                         input {
-                            type: "number",
+                            r#type: "number",
                             value: "{form_cpu_cores()}",
-                            oninput: move |evt| if let Ok(v) = evt.value().parse() { form_cpu_cores.set(v) }
+                            oninput: move |evt| {
+                                if let Ok(v) = evt.value().parse() {
+                                    form_cpu_cores.set(v)
+                                }
+                            },
                         }
                     }
                     div { class: "field",
                         label { "Memory (内存 MB)" }
                         input {
-                            type: "number",
+                            r#type: "number",
                             value: "{form_memory_mb()}",
-                            oninput: move |evt| if let Ok(v) = evt.value().parse() { form_memory_mb.set(v) }
+                            oninput: move |evt| {
+                                if let Ok(v) = evt.value().parse() {
+                                    form_memory_mb.set(v)
+                                }
+                            },
                         }
                     }
                     div { class: "field",
                         label { "Storage (硬盘 GB)" }
                         input {
-                            type: "number",
+                            r#type: "number",
                             value: "{form_storage_gb()}",
-                            oninput: move |evt| if let Ok(v) = evt.value().parse() { form_storage_gb.set(v) }
+                            oninput: move |evt| {
+                                if let Ok(v) = evt.value().parse() {
+                                    form_storage_gb.set(v)
+                                }
+                            },
                         }
                     }
                     div { class: "field",
                         label { "Bandwidth (带宽 Mbps)" }
                         input {
-                            type: "number",
+                            r#type: "number",
                             value: "{form_bandwidth_mbps()}",
-                            oninput: move |evt| if let Ok(v) = evt.value().parse() { form_bandwidth_mbps.set(v) }
+                            oninput: move |evt| {
+                                if let Ok(v) = evt.value().parse() {
+                                    form_bandwidth_mbps.set(v)
+                                }
+                            },
                         }
                     }
                     div { class: "field",
-                        label { "Traffic (流量 GB)" }
+                        label { "Traffic (流量 GB，-1 表示无限流量)" }
                         input {
-                            type: "number",
+                            r#type: "number",
+                            min: "-1",
                             value: "{form_traffic_gb()}",
-                            oninput: move |evt| if let Ok(v) = evt.value().parse() { form_traffic_gb.set(v) }
+                            oninput: move |evt| {
+                                if let Ok(v) = evt.value().parse() {
+                                    form_traffic_gb.set(v)
+                                }
+                            },
                         }
                     }
                     if is_editing() {
@@ -270,9 +306,9 @@ pub fn PlansPage() -> Element {
                         div { class: "field",
                             label {
                                 input {
-                                    type: "checkbox",
+                                    r#type: "checkbox",
                                     checked: form_active(),
-                                    onchange: move |evt| form_active.set(evt.value().parse().unwrap_or(false))
+                                    onchange: move |evt| form_active.set(evt.value().parse().unwrap_or(false)),
                                 }
                                 " 上架 (Active)"
                             }
@@ -285,7 +321,9 @@ pub fn PlansPage() -> Element {
                     }
                 }
             } else {
-                if session().loading { p { class: "status", "处理中..." } }
+                if session().loading {
+                    p { class: "status", "处理中..." }
+                }
                 if session().plans.is_empty() {
                     p { class: "status", "暂无 Plan 数据。" }
                 } else {
@@ -295,7 +333,9 @@ pub fn PlansPage() -> Element {
                                 strong { "{plan.name} ({plan.code})" }
                                 span { class: "meta", "Plan ID: {plan.id}" }
                                 span { class: "meta", "Price: ${plan.monthly_price}/mo" }
-                                span { class: "meta", "{plan.cpu_cores}C / {plan.memory_mb}MB / {plan.storage_gb}GB / {plan.bandwidth_mbps}Mbps / {plan.traffic_gb}GB" }
+                                span { class: "meta",
+                                    "{plan.cpu_cores}C / {plan.memory_mb}MB / {plan.storage_gb}GB / {plan.bandwidth_mbps}Mbps / {format_traffic_gb(plan.traffic_gb)}"
+                                }
                                 span { class: "meta", "Active: {plan.active}" }
                                 span { class: "meta",
                                     "Sold/Max: {plan.sold_inventory}/{plan.max_inventory.unwrap_or(-1)} (-1 表示不限)"
@@ -308,7 +348,11 @@ pub fn PlansPage() -> Element {
                                             let next = !plan.active;
                                             move |_| toggle_active(pid.clone(), next)
                                         },
-                                        if plan.active { "下架" } else { "上架" }
+                                        if plan.active {
+                                            "下架"
+                                        } else {
+                                            "上架"
+                                        }
                                     }
                                     button {
                                         class: "btn-secondary",
@@ -325,5 +369,13 @@ pub fn PlansPage() -> Element {
                 }
             }
         }
+    }
+}
+
+fn format_traffic_gb(traffic_gb: i64) -> String {
+    if traffic_gb == -1 {
+        "无限流量".to_string()
+    } else {
+        format!("{traffic_gb}GB 流量")
     }
 }

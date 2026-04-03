@@ -8,6 +8,7 @@ use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Routable, Debug, PartialEq)]
+#[allow(clippy::enum_variant_names)]
 pub enum Route {
     #[route("/")]
     StorefrontPage {},
@@ -142,6 +143,7 @@ pub struct InstanceMetrics {
 }
 
 #[derive(Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct ConsoleToken {
     pub url: String,
     pub token: String,

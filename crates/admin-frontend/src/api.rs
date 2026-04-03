@@ -15,7 +15,7 @@ pub fn default_api_base() -> String {
 pub async fn login(api_base: &str, payload: &AuthPayload) -> Result<AuthTokenResponse, String> {
     let client = Client::new();
     let resp = client
-        .post(&format!("{api_base}/api/auth/login"))
+        .post(format!("{api_base}/api/auth/login"))
         .json(payload)
         .send()
         .await
@@ -33,7 +33,7 @@ pub async fn login(api_base: &str, payload: &AuthPayload) -> Result<AuthTokenRes
 pub async fn get_profile(api_base: &str, token: &str) -> Result<AuthProfileResponse, String> {
     let client = Client::new();
     let resp = client
-        .get(&format!("{api_base}/api/auth/me"))
+        .get(format!("{api_base}/api/auth/me"))
         .header("Authorization", &format!("Bearer {token}"))
         .send()
         .await
@@ -51,7 +51,7 @@ pub async fn get_profile(api_base: &str, token: &str) -> Result<AuthProfileRespo
 pub async fn get_nodes(api_base: &str, token: &str) -> Result<Vec<NodeItem>, String> {
     let client = Client::new();
     let resp = client
-        .get(&format!("{api_base}/api/admin/nodes"))
+        .get(format!("{api_base}/api/admin/nodes"))
         .header("Authorization", &format!("Bearer {token}"))
         .send()
         .await
@@ -73,7 +73,7 @@ pub async fn create_node(
 ) -> Result<NodeItem, String> {
     let client = Client::new();
     let resp = client
-        .post(&format!("{api_base}/api/admin/nodes"))
+        .post(format!("{api_base}/api/admin/nodes"))
         .header("Authorization", &format!("Bearer {token}"))
         .json(payload)
         .send()
@@ -96,7 +96,7 @@ pub async fn update_node(
 ) -> Result<NodeItem, String> {
     let client = Client::new();
     let resp = client
-        .patch(&format!("{api_base}/api/admin/nodes/{node_id}"))
+        .patch(format!("{api_base}/api/admin/nodes/{node_id}"))
         .header("Authorization", &format!("Bearer {token}"))
         .json(payload)
         .send()
@@ -114,7 +114,7 @@ pub async fn update_node(
 pub async fn get_instances(api_base: &str, token: &str) -> Result<Vec<InstanceItem>, String> {
     let client = Client::new();
     let resp = client
-        .get(&format!("{api_base}/api/admin/instances"))
+        .get(format!("{api_base}/api/admin/instances"))
         .header("Authorization", &format!("Bearer {token}"))
         .send()
         .await
@@ -132,7 +132,7 @@ pub async fn get_instances(api_base: &str, token: &str) -> Result<Vec<InstanceIt
 pub async fn get_plans(api_base: &str, token: &str) -> Result<Vec<AdminPlanItem>, String> {
     let client = Client::new();
     let resp = client
-        .get(&format!("{api_base}/api/admin/plans"))
+        .get(format!("{api_base}/api/admin/plans"))
         .header("Authorization", &format!("Bearer {token}"))
         .send()
         .await
@@ -154,7 +154,7 @@ pub async fn create_plan(
 ) -> Result<AdminPlanItem, String> {
     let client = Client::new();
     let resp = client
-        .post(&format!("{api_base}/api/admin/plans"))
+        .post(format!("{api_base}/api/admin/plans"))
         .header("Authorization", &format!("Bearer {token}"))
         .json(payload)
         .send()
@@ -177,7 +177,7 @@ pub async fn update_plan(
 ) -> Result<(), String> {
     let client = Client::new();
     let resp = client
-        .patch(&format!("{api_base}/api/admin/plans/{plan_id}"))
+        .patch(format!("{api_base}/api/admin/plans/{plan_id}"))
         .header("Authorization", &format!("Bearer {token}"))
         .json(payload)
         .send()
@@ -193,7 +193,7 @@ pub async fn update_plan(
 pub async fn get_guests(api_base: &str, token: &str) -> Result<Vec<GuestItem>, String> {
     let client = Client::new();
     let resp = client
-        .get(&format!("{api_base}/api/admin/guests"))
+        .get(format!("{api_base}/api/admin/guests"))
         .header("Authorization", &format!("Bearer {token}"))
         .send()
         .await
@@ -216,7 +216,7 @@ pub async fn update_guest(
 ) -> Result<(), String> {
     let client = Client::new();
     let resp = client
-        .patch(&format!("{api_base}/api/admin/guests/{user_id}"))
+        .patch(format!("{api_base}/api/admin/guests/{user_id}"))
         .header("Authorization", &format!("Bearer {token}"))
         .json(payload)
         .send()
@@ -232,7 +232,7 @@ pub async fn update_guest(
 pub async fn get_tickets(api_base: &str, token: &str) -> Result<Vec<TicketItem>, String> {
     let client = Client::new();
     let resp = client
-        .get(&format!("{api_base}/api/admin/tickets"))
+        .get(format!("{api_base}/api/admin/tickets"))
         .header("Authorization", &format!("Bearer {token}"))
         .send()
         .await
@@ -255,7 +255,7 @@ pub async fn update_ticket_status(
 ) -> Result<(), String> {
     let client = Client::new();
     let resp = client
-        .patch(&format!("{api_base}/api/admin/tickets/{ticket_id}/status"))
+        .patch(format!("{api_base}/api/admin/tickets/{ticket_id}/status"))
         .header("Authorization", &format!("Bearer {token}"))
         .json(payload)
         .send()
@@ -276,7 +276,7 @@ pub async fn reply_ticket(
 ) -> Result<(), String> {
     let client = Client::new();
     let resp = client
-        .post(&format!("{api_base}/api/admin/tickets/{ticket_id}/reply"))
+        .post(format!("{api_base}/api/admin/tickets/{ticket_id}/reply"))
         .header("Authorization", &format!("Bearer {token}"))
         .json(payload)
         .send()

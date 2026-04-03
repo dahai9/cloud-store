@@ -19,7 +19,7 @@ pub fn LoginPage(source: Option<String>, plan: Option<String>) -> Element {
     let on_login = move |_| {
         let email_value = email();
         let password_value = password();
-        let nav = navigator.clone();
+        let nav = navigator;
         let mut state = session;
         let is_checkout_flow = is_checkout_flow;
         let return_plan = login_return_plan.clone();
@@ -64,7 +64,7 @@ pub fn LoginPage(source: Option<String>, plan: Option<String>) -> Element {
     let on_register = move |_| {
         let email_value = email();
         let password_value = password();
-        let nav = navigator.clone();
+        let nav = navigator;
         let mut state = session;
         let is_checkout_flow = is_checkout_flow;
         let return_plan = register_return_plan.clone();

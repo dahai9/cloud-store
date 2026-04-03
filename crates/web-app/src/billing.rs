@@ -41,7 +41,19 @@ pub async fn list_public_plans(
     let items = rows
         .into_iter()
         .map(
-            |(id, code, name, monthly_price, memory_mb, storage_gb, cpu_cores, bandwidth_mbps, traffic_gb, max_inventory, sold_inventory)| {
+            |(
+                id,
+                code,
+                name,
+                monthly_price,
+                memory_mb,
+                storage_gb,
+                cpu_cores,
+                bandwidth_mbps,
+                traffic_gb,
+                max_inventory,
+                sold_inventory,
+            )| {
                 PublicPlanItem {
                     id,
                     code,

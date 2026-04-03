@@ -6,6 +6,16 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 use tracing::error;
 
+const UNLIMITED_TRAFFIC_GB: i64 = -1;
+
+fn validate_traffic_gb(traffic_gb: i64) -> Result<(), (StatusCode, &'static str)> {
+    if traffic_gb < UNLIMITED_TRAFFIC_GB {
+        return Err((StatusCode::BAD_REQUEST, "traffic_gb must be -1 or greater"));
+    }
+
+    Ok(())
+}
+
 #[derive(Serialize)]
 pub struct AdminPlanItem {
     pub id: String,
@@ -173,6 +183,8 @@ pub async fn add_plan(
 ) -> Result<Json<AdminPlanItem>, (StatusCode, &'static str)> {
     let _ = auth::require_admin(&headers, &state).await?;
 
+    validate_traffic_gb(payload.traffic_gb)?;
+
     let id = uuid::Uuid::new_v4().to_string();
     let price: f64 = payload
         .monthly_price
@@ -248,6 +260,8 @@ pub async fn update_plan(
     let next_traffic_gb = payload.traffic_gb.unwrap_or(current.8);
     let next_active = payload.active.unwrap_or(current.9 != 0);
     let next_max_inventory = payload.max_inventory.or(current.10);
+
+    validate_traffic_gb(next_traffic_gb)?;
 
     if let Some(limit) = next_max_inventory {
         if limit < current.11 {
