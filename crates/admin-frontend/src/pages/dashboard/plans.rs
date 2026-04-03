@@ -18,6 +18,7 @@ pub fn PlansPage() -> Element {
     let mut form_memory_mb = use_signal(|| 1024i64);
     let mut form_storage_gb = use_signal(|| 50i64);
     let mut form_cpu_cores = use_signal(|| 1i64);
+    let mut form_cpu_allowance_pct = use_signal(|| 100i64);
     let mut form_bandwidth_mbps = use_signal(|| 100i64);
     let mut form_traffic_gb = use_signal(|| 1000i64);
     let mut form_active = use_signal(|| true);
@@ -46,6 +47,7 @@ pub fn PlansPage() -> Element {
         form_memory_mb.set(1024);
         form_storage_gb.set(50);
         form_cpu_cores.set(1);
+        form_cpu_allowance_pct.set(100);
         form_bandwidth_mbps.set(100);
         form_traffic_gb.set(1000);
         form_max_inventory.set(String::new());
@@ -61,6 +63,7 @@ pub fn PlansPage() -> Element {
         form_memory_mb.set(plan.memory_mb);
         form_storage_gb.set(plan.storage_gb);
         form_cpu_cores.set(plan.cpu_cores);
+        form_cpu_allowance_pct.set(plan.cpu_allowance_pct);
         form_bandwidth_mbps.set(plan.bandwidth_mbps);
         form_traffic_gb.set(plan.traffic_gb);
         form_active.set(plan.active);
@@ -86,6 +89,7 @@ pub fn PlansPage() -> Element {
         let memory_mb = form_memory_mb();
         let storage_gb = form_storage_gb();
         let cpu_cores = form_cpu_cores();
+        let cpu_allowance_pct = form_cpu_allowance_pct();
         let bandwidth_mbps = form_bandwidth_mbps();
         let traffic_gb = form_traffic_gb();
         let active = form_active();
@@ -118,6 +122,7 @@ pub fn PlansPage() -> Element {
                     memory_mb,
                     storage_gb,
                     cpu_cores,
+                    cpu_allowance_pct,
                     bandwidth_mbps,
                     traffic_gb,
                 };
@@ -140,6 +145,7 @@ pub fn PlansPage() -> Element {
                     memory_mb: Some(memory_mb),
                     storage_gb: Some(storage_gb),
                     cpu_cores: Some(cpu_cores),
+                    cpu_allowance_pct: Some(cpu_allowance_pct),
                     bandwidth_mbps: Some(bandwidth_mbps),
                     traffic_gb: Some(traffic_gb),
                     active: Some(active),
@@ -174,6 +180,7 @@ pub fn PlansPage() -> Element {
                 memory_mb: None,
                 storage_gb: None,
                 cpu_cores: None,
+                cpu_allowance_pct: None,
                 bandwidth_mbps: None,
                 traffic_gb: None,
                 active: Some(next_active),
@@ -238,10 +245,26 @@ pub fn PlansPage() -> Element {
                         label { "CPU Cores (核心数)" }
                         input {
                             r#type: "number",
+                            min: "1",
+                            step: "1",
                             value: "{form_cpu_cores()}",
                             oninput: move |evt| {
                                 if let Ok(v) = evt.value().parse() {
                                     form_cpu_cores.set(v)
+                                }
+                            },
+                        }
+                    }
+                    div { class: "field",
+                        label { "CPU Allowance (%)" }
+                        input {
+                            r#type: "number",
+                            min: "1",
+                            step: "1",
+                            value: "{form_cpu_allowance_pct()}",
+                            oninput: move |evt| {
+                                if let Ok(v) = evt.value().parse() {
+                                    form_cpu_allowance_pct.set(v)
                                 }
                             },
                         }
@@ -334,7 +357,7 @@ pub fn PlansPage() -> Element {
                                 span { class: "meta", "Plan ID: {plan.id}" }
                                 span { class: "meta", "Price: ${plan.monthly_price}/mo" }
                                 span { class: "meta",
-                                    "{plan.cpu_cores}C / {plan.memory_mb}MB / {plan.storage_gb}GB / {plan.bandwidth_mbps}Mbps / {format_traffic_gb(plan.traffic_gb)}"
+                                    "{plan.cpu_cores}C / {plan.cpu_allowance_pct}% CPU / {plan.memory_mb}MB / {plan.storage_gb}GB / {plan.bandwidth_mbps}Mbps / {format_traffic_gb(plan.traffic_gb)}"
                                 }
                                 span { class: "meta", "Active: {plan.active}" }
                                 span { class: "meta",

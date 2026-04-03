@@ -16,6 +16,41 @@ fn validate_traffic_gb(traffic_gb: i64) -> Result<(), (StatusCode, &'static str)
     Ok(())
 }
 
+fn validate_cpu_cores(cpu_cores: i64) -> Result<(), (StatusCode, &'static str)> {
+    if cpu_cores < 1 {
+        return Err((StatusCode::BAD_REQUEST, "cpu_cores must be at least 1"));
+    }
+
+    Ok(())
+}
+
+fn validate_cpu_allowance_pct(cpu_allowance_pct: i64) -> Result<(), (StatusCode, &'static str)> {
+    if cpu_allowance_pct < 1 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "cpu_allowance_pct must be at least 1",
+        ));
+    }
+
+    Ok(())
+}
+
+fn validate_nat_port_lease_range(
+    public_ip: &str,
+    start_port: i64,
+    end_port: i64,
+) -> Result<(), (StatusCode, &'static str)> {
+    if public_ip.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "public_ip is required"));
+    }
+
+    if start_port < 1 || end_port < 1 || start_port > end_port || end_port > 65_535 {
+        return Err((StatusCode::BAD_REQUEST, "invalid port range"));
+    }
+
+    Ok(())
+}
+
 #[derive(Serialize)]
 pub struct AdminPlanItem {
     pub id: String,
@@ -25,6 +60,7 @@ pub struct AdminPlanItem {
     pub memory_mb: i64,
     pub storage_gb: i64,
     pub cpu_cores: i64,
+    pub cpu_allowance_pct: i64,
     pub bandwidth_mbps: i64,
     pub traffic_gb: i64,
     pub active: bool,
@@ -40,6 +76,7 @@ pub struct AdminPlanCreateRequest {
     pub memory_mb: i64,
     pub storage_gb: i64,
     pub cpu_cores: i64,
+    pub cpu_allowance_pct: i64,
     pub bandwidth_mbps: i64,
     pub traffic_gb: i64,
 }
@@ -52,6 +89,7 @@ pub struct AdminPlanUpdateRequest {
     pub memory_mb: Option<i64>,
     pub storage_gb: Option<i64>,
     pub cpu_cores: Option<i64>,
+    pub cpu_allowance_pct: Option<i64>,
     pub bandwidth_mbps: Option<i64>,
     pub traffic_gb: Option<i64>,
     pub active: Option<bool>,
@@ -109,6 +147,28 @@ pub struct NodeUpdateRequest {
 }
 
 #[derive(Serialize)]
+pub struct NatPortLeaseItem {
+    pub id: String,
+    pub node_id: String,
+    pub node_name: String,
+    pub node_region: String,
+    pub public_ip: String,
+    pub start_port: i64,
+    pub end_port: i64,
+    pub reserved: bool,
+    pub reserved_for_order_id: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Deserialize)]
+pub struct NatPortLeaseCreateRequest {
+    pub node_id: String,
+    pub public_ip: String,
+    pub start_port: i64,
+    pub end_port: i64,
+}
+
+#[derive(Serialize)]
 pub struct InstanceItem {
     pub id: String,
     pub user_email: String,
@@ -125,8 +185,8 @@ pub async fn list_plans(
 ) -> Result<Json<Vec<AdminPlanItem>>, (StatusCode, &'static str)> {
     let _ = auth::require_admin(&headers, &state).await?;
 
-    let rows = sqlx::query_as::<_, (String, String, String, String, i64, i64, i64, i64, i64, i64, Option<i64>, i64)>(
-        "SELECT id, code, name, CAST(monthly_price AS TEXT), memory_mb, storage_gb, cpu_cores, bandwidth_mbps, traffic_gb, active, max_inventory, sold_inventory FROM nat_plans ORDER BY created_at DESC",
+    let rows = sqlx::query_as::<_, (String, String, String, String, i64, i64, i64, i64, i64, i64, i64, Option<i64>, i64)>(
+        "SELECT id, code, name, CAST(monthly_price AS TEXT), memory_mb, storage_gb, cpu_cores, cpu_allowance_pct, bandwidth_mbps, traffic_gb, active, max_inventory, sold_inventory FROM nat_plans ORDER BY created_at DESC",
     )
     .fetch_all(&state.db)
     .await
@@ -149,6 +209,7 @@ pub async fn list_plans(
                 memory_mb,
                 storage_gb,
                 cpu_cores,
+                cpu_allowance_pct,
                 bandwidth_mbps,
                 traffic_gb,
                 active,
@@ -163,6 +224,7 @@ pub async fn list_plans(
                     memory_mb,
                     storage_gb,
                     cpu_cores,
+                    cpu_allowance_pct,
                     bandwidth_mbps,
                     traffic_gb,
                     active: active != 0,
@@ -184,6 +246,8 @@ pub async fn add_plan(
     let _ = auth::require_admin(&headers, &state).await?;
 
     validate_traffic_gb(payload.traffic_gb)?;
+    validate_cpu_cores(payload.cpu_cores)?;
+    validate_cpu_allowance_pct(payload.cpu_allowance_pct)?;
 
     let id = uuid::Uuid::new_v4().to_string();
     let price: f64 = payload
@@ -192,7 +256,7 @@ pub async fn add_plan(
         .map_err(|_| (StatusCode::BAD_REQUEST, "invalid price"))?;
 
     sqlx::query(
-        "INSERT INTO nat_plans (id, code, name, memory_mb, storage_gb, cpu_cores, bandwidth_mbps, traffic_gb, monthly_price, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO nat_plans (id, code, name, memory_mb, storage_gb, cpu_cores, cpu_allowance_pct, bandwidth_mbps, traffic_gb, monthly_price, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(&id)
     .bind(&payload.code)
@@ -200,6 +264,7 @@ pub async fn add_plan(
     .bind(payload.memory_mb)
     .bind(payload.storage_gb)
     .bind(payload.cpu_cores)
+    .bind(payload.cpu_allowance_pct)
     .bind(payload.bandwidth_mbps)
     .bind(payload.traffic_gb)
     .bind(price)
@@ -219,6 +284,7 @@ pub async fn add_plan(
         memory_mb: payload.memory_mb,
         storage_gb: payload.storage_gb,
         cpu_cores: payload.cpu_cores,
+        cpu_allowance_pct: payload.cpu_allowance_pct,
         bandwidth_mbps: payload.bandwidth_mbps,
         traffic_gb: payload.traffic_gb,
         active: true,
@@ -235,8 +301,8 @@ pub async fn update_plan(
 ) -> Result<Json<AdminPlanItem>, (StatusCode, &'static str)> {
     let _ = auth::require_admin(&headers, &state).await?;
 
-    let current = sqlx::query_as::<_, (String, String, String, String, i64, i64, i64, i64, i64, i64, Option<i64>, i64)>(
-        "SELECT id, code, name, CAST(monthly_price AS TEXT), memory_mb, storage_gb, cpu_cores, bandwidth_mbps, traffic_gb, active, max_inventory, sold_inventory FROM nat_plans WHERE id = ? LIMIT 1",
+    let current = sqlx::query_as::<_, (String, String, String, String, i64, i64, i64, i64, i64, i64, i64, Option<i64>, i64)>(
+        "SELECT id, code, name, CAST(monthly_price AS TEXT), memory_mb, storage_gb, cpu_cores, cpu_allowance_pct, bandwidth_mbps, traffic_gb, active, max_inventory, sold_inventory FROM nat_plans WHERE id = ? LIMIT 1",
     )
     .bind(&plan_id)
     .fetch_optional(&state.db)
@@ -256,15 +322,18 @@ pub async fn update_plan(
     let next_memory_mb = payload.memory_mb.unwrap_or(current.4);
     let next_storage_gb = payload.storage_gb.unwrap_or(current.5);
     let next_cpu_cores = payload.cpu_cores.unwrap_or(current.6);
-    let next_bandwidth_mbps = payload.bandwidth_mbps.unwrap_or(current.7);
-    let next_traffic_gb = payload.traffic_gb.unwrap_or(current.8);
-    let next_active = payload.active.unwrap_or(current.9 != 0);
-    let next_max_inventory = payload.max_inventory.or(current.10);
+    validate_cpu_cores(next_cpu_cores)?;
+    let next_cpu_allowance_pct = payload.cpu_allowance_pct.unwrap_or(current.7);
+    validate_cpu_allowance_pct(next_cpu_allowance_pct)?;
+    let next_bandwidth_mbps = payload.bandwidth_mbps.unwrap_or(current.8);
+    let next_traffic_gb = payload.traffic_gb.unwrap_or(current.9);
+    let next_active = payload.active.unwrap_or(current.10 != 0);
+    let next_max_inventory = payload.max_inventory.or(current.11);
 
     validate_traffic_gb(next_traffic_gb)?;
 
     if let Some(limit) = next_max_inventory {
-        if limit < current.11 {
+        if limit < current.12 {
             return Err((
                 StatusCode::BAD_REQUEST,
                 "max_inventory cannot be lower than sold_inventory",
@@ -272,13 +341,14 @@ pub async fn update_plan(
         }
     }
 
-    sqlx::query("UPDATE nat_plans SET code = ?, name = ?, monthly_price = ?, memory_mb = ?, storage_gb = ?, cpu_cores = ?, bandwidth_mbps = ?, traffic_gb = ?, active = ?, max_inventory = ? WHERE id = ?")
+    sqlx::query("UPDATE nat_plans SET code = ?, name = ?, monthly_price = ?, memory_mb = ?, storage_gb = ?, cpu_cores = ?, cpu_allowance_pct = ?, bandwidth_mbps = ?, traffic_gb = ?, active = ?, max_inventory = ? WHERE id = ?")
         .bind(&next_code)
         .bind(&next_name)
         .bind(price_val)
         .bind(next_memory_mb)
         .bind(next_storage_gb)
         .bind(next_cpu_cores)
+        .bind(next_cpu_allowance_pct)
         .bind(next_bandwidth_mbps)
         .bind(next_traffic_gb)
         .bind(if next_active { 1 } else { 0 })
@@ -299,11 +369,12 @@ pub async fn update_plan(
         memory_mb: next_memory_mb,
         storage_gb: next_storage_gb,
         cpu_cores: next_cpu_cores,
+        cpu_allowance_pct: next_cpu_allowance_pct,
         bandwidth_mbps: next_bandwidth_mbps,
         traffic_gb: next_traffic_gb,
         active: next_active,
         max_inventory: next_max_inventory,
-        sold_inventory: current.11,
+        sold_inventory: current.12,
     }))
 }
 
@@ -531,6 +602,214 @@ pub async fn update_node(
         api_endpoint: next_api_endpoint,
         api_token: next_api_token,
     }))
+}
+
+pub async fn list_nat_port_leases(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<NatPortLeaseItem>>, (StatusCode, &'static str)> {
+    let _ = auth::require_admin(&headers, &state).await?;
+
+    let rows = sqlx::query_as::<
+        _,
+        (
+            String,
+            String,
+            String,
+            String,
+            String,
+            i64,
+            i64,
+            i64,
+            Option<String>,
+            String,
+        ),
+    >(
+        "SELECT l.id, l.node_id, n.name, n.region, l.public_ip, l.start_port, l.end_port, l.reserved, l.reserved_for_order_id, l.created_at\n         FROM nat_port_leases l\n         INNER JOIN nodes n ON n.id = l.node_id\n         ORDER BY l.created_at DESC\n         LIMIT 200",
+    )
+    .fetch_all(&state.db)
+    .await
+    .map_err(|err| {
+        error!(error = %err, "failed to list nat port leases");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to load nat port leases",
+        )
+    })?;
+
+    let items = rows
+        .into_iter()
+        .map(
+            |(
+                id,
+                node_id,
+                node_name,
+                node_region,
+                public_ip,
+                start_port,
+                end_port,
+                reserved,
+                reserved_for_order_id,
+                created_at,
+            )| NatPortLeaseItem {
+                id,
+                node_id,
+                node_name,
+                node_region,
+                public_ip,
+                start_port,
+                end_port,
+                reserved: reserved != 0,
+                reserved_for_order_id,
+                created_at,
+            },
+        )
+        .collect();
+
+    Ok(Json(items))
+}
+
+pub async fn add_nat_port_lease(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<NatPortLeaseCreateRequest>,
+) -> Result<Json<NatPortLeaseItem>, (StatusCode, &'static str)> {
+    let _ = auth::require_admin(&headers, &state).await?;
+
+    let NatPortLeaseCreateRequest {
+        node_id,
+        public_ip,
+        start_port,
+        end_port,
+    } = payload;
+
+    let public_ip = public_ip.trim().to_string();
+    validate_nat_port_lease_range(&public_ip, start_port, end_port)?;
+
+    let node = sqlx::query_as::<_, (String, String)>(
+        "SELECT name, region FROM nodes WHERE id = ? LIMIT 1",
+    )
+    .bind(&node_id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|err| {
+        error!(error = %err, node_id = %node_id, "failed to query node for nat port lease");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to load node for nat port lease",
+        )
+    })?
+    .ok_or((StatusCode::NOT_FOUND, "node not found"))?;
+
+    let existing = sqlx::query_scalar::<_, String>(
+        "SELECT id FROM nat_port_leases WHERE node_id = ? AND public_ip = ? AND start_port = ? AND end_port = ? LIMIT 1",
+    )
+    .bind(&node_id)
+    .bind(&public_ip)
+    .bind(start_port)
+    .bind(end_port)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|err| {
+        error!(error = %err, node_id = %node_id, public_ip = %public_ip, start_port = start_port, end_port = end_port, "failed to check duplicate nat port lease");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to validate nat port lease",
+        )
+    })?;
+
+    if existing.is_some() {
+        return Err((StatusCode::CONFLICT, "nat port lease already exists"));
+    }
+
+    let id = uuid::Uuid::new_v4().to_string();
+    sqlx::query(
+        "INSERT INTO nat_port_leases (id, node_id, public_ip, start_port, end_port, reserved) VALUES (?, ?, ?, ?, ?, 0)",
+    )
+    .bind(&id)
+    .bind(&node_id)
+    .bind(&public_ip)
+    .bind(start_port)
+    .bind(end_port)
+    .execute(&state.db)
+    .await
+    .map_err(|err| {
+        error!(error = %err, node_id = %node_id, public_ip = %public_ip, start_port = start_port, end_port = end_port, "failed to create nat port lease");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to create nat port lease",
+        )
+    })?;
+
+    let created_at = sqlx::query_scalar::<_, String>(
+        "SELECT created_at FROM nat_port_leases WHERE id = ? LIMIT 1",
+    )
+    .bind(&id)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|err| {
+        error!(error = %err, lease_id = %id, "failed to load created nat port lease");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to load nat port lease",
+        )
+    })?;
+
+    Ok(Json(NatPortLeaseItem {
+        id,
+        node_id,
+        node_name: node.0,
+        node_region: node.1,
+        public_ip,
+        start_port,
+        end_port,
+        reserved: false,
+        reserved_for_order_id: None,
+        created_at,
+    }))
+}
+
+pub async fn delete_nat_port_lease(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(lease_id): Path<String>,
+) -> Result<StatusCode, (StatusCode, &'static str)> {
+    let _ = auth::require_admin(&headers, &state).await?;
+
+    let lease =
+        sqlx::query_as::<_, (i64,)>("SELECT reserved FROM nat_port_leases WHERE id = ? LIMIT 1")
+            .bind(&lease_id)
+            .fetch_optional(&state.db)
+            .await
+            .map_err(|err| {
+                error!(error = %err, lease_id = %lease_id, "failed to query nat port lease");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to load nat port lease",
+                )
+            })?
+            .ok_or((StatusCode::NOT_FOUND, "nat port lease not found"))?;
+
+    if lease.0 != 0 {
+        return Err((
+            StatusCode::CONFLICT,
+            "reserved nat port lease cannot be deleted",
+        ));
+    }
+
+    sqlx::query("DELETE FROM nat_port_leases WHERE id = ?")
+        .bind(&lease_id)
+        .execute(&state.db)
+        .await
+        .map_err(|err| {
+            error!(error = %err, lease_id = %lease_id, "failed to delete nat port lease");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to delete nat port lease",
+            )
+        })?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn list_instances(

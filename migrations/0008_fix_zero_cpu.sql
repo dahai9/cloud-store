@@ -1,0 +1,1 @@
+UPDATE nat_plans SET cpu_cores = 1 WHERE cpu_cores < 1;

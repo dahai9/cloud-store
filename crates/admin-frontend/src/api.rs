@@ -1,8 +1,8 @@
 use crate::models::{
     AdminPlanCreateRequest, AdminPlanItem, AdminPlanUpdateRequest, AuthPayload,
     AuthProfileResponse, AuthTokenResponse, GuestItem, GuestUpdateRequest, InstanceItem,
-    NodeCreateRequest, NodeItem, NodeUpdateRequest, TicketItem, TicketReplyRequest,
-    TicketStatusUpdateRequest,
+    NatPortLeaseCreateRequest, NatPortLeaseItem, NodeCreateRequest, NodeItem, NodeUpdateRequest,
+    TicketItem, TicketReplyRequest, TicketStatusUpdateRequest,
 };
 use reqwest::Client;
 
@@ -86,6 +86,70 @@ pub async fn create_node(
     resp.json::<NodeItem>()
         .await
         .map_err(|e| format!("Failed to parse response: {e}"))
+}
+
+pub async fn get_nat_port_leases(
+    api_base: &str,
+    token: &str,
+) -> Result<Vec<NatPortLeaseItem>, String> {
+    let client = Client::new();
+    let resp = client
+        .get(format!("{api_base}/api/admin/nat-port-leases"))
+        .header("Authorization", &format!("Bearer {token}"))
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Nat port lease request failed: {}", resp.status()));
+    }
+
+    resp.json::<Vec<NatPortLeaseItem>>()
+        .await
+        .map_err(|e| format!("Failed to parse nat port leases: {e}"))
+}
+
+pub async fn create_nat_port_lease(
+    api_base: &str,
+    token: &str,
+    payload: &NatPortLeaseCreateRequest,
+) -> Result<NatPortLeaseItem, String> {
+    let client = Client::new();
+    let resp = client
+        .post(format!("{api_base}/api/admin/nat-port-leases"))
+        .header("Authorization", &format!("Bearer {token}"))
+        .json(payload)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Create failed: {}", resp.status()));
+    }
+
+    resp.json::<NatPortLeaseItem>()
+        .await
+        .map_err(|e| format!("Failed to parse response: {e}"))
+}
+
+pub async fn delete_nat_port_lease(
+    api_base: &str,
+    token: &str,
+    lease_id: &str,
+) -> Result<(), String> {
+    let client = Client::new();
+    let resp = client
+        .delete(format!("{api_base}/api/admin/nat-port-leases/{lease_id}"))
+        .header("Authorization", &format!("Bearer {token}"))
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Delete failed: {}", resp.status()));
+    }
+
+    Ok(())
 }
 
 pub async fn update_node(

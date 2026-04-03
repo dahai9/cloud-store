@@ -48,6 +48,7 @@ pub struct PublicPlanItem {
     pub memory_mb: i64,
     pub storage_gb: i64,
     pub cpu_cores: i64,
+    pub cpu_allowance_pct: i64,
     pub bandwidth_mbps: i64,
     pub traffic_gb: i64,
     pub max_inventory: Option<i64>,

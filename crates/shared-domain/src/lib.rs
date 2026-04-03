@@ -65,6 +65,7 @@ pub struct NatPlan {
     pub memory_mb: i32,
     pub storage_gb: i32,
     pub cpu_cores: i32,
+    pub cpu_allowance_pct: i32,
     pub bandwidth_mbps: i32,
     pub traffic_gb: i32,
     pub monthly_price: Decimal,

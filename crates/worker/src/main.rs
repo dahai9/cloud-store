@@ -88,7 +88,7 @@ async fn process_order(
 
     // 2. Fetch Plan details
     let plan_row = sqlx::query(
-        "SELECT id, code, name, memory_mb, storage_gb, cpu_cores, bandwidth_mbps, traffic_gb, monthly_price FROM nat_plans WHERE id = ?"
+        "SELECT id, code, name, memory_mb, storage_gb, cpu_cores, cpu_allowance_pct, bandwidth_mbps, traffic_gb, CAST(monthly_price AS TEXT) AS monthly_price FROM nat_plans WHERE id = ?"
     )
     .bind(plan_id_str)
     .fetch_one(db)
@@ -101,9 +101,10 @@ async fn process_order(
         memory_mb: plan_row.get::<i64, _>("memory_mb") as i32,
         storage_gb: plan_row.get::<i64, _>("storage_gb") as i32,
         cpu_cores: plan_row.get::<i64, _>("cpu_cores") as i32,
+        cpu_allowance_pct: plan_row.get::<i64, _>("cpu_allowance_pct") as i32,
         bandwidth_mbps: plan_row.get::<i64, _>("bandwidth_mbps") as i32,
         traffic_gb: plan_row.get::<i64, _>("traffic_gb") as i32,
-        monthly_price: Decimal::from_str(&plan_row.get::<f64, _>("monthly_price").to_string())
+        monthly_price: Decimal::from_str(&plan_row.get::<String, _>("monthly_price"))
             .unwrap_or(Decimal::ZERO),
         active: true,
     };

@@ -101,7 +101,7 @@ pub fn StorefrontPage() -> Element {
                             }
                             h3 { "{plan.name}" }
                             p {
-                                "{plan.cpu_cores}C / {plan.memory_mb}MB RAM / {plan.storage_gb}GB SSD / {plan.bandwidth_mbps}Mbps / {format_traffic_gb(plan.traffic_gb)}"
+                                "{plan.cpu_cores}C / {plan.cpu_allowance_pct}% CPU Allowance / {plan.memory_mb}MB RAM / {plan.storage_gb}GB SSD / {plan.bandwidth_mbps}Mbps / {format_traffic_gb(plan.traffic_gb)}"
                             }
                             div { class: "price", "${plan.monthly_price} / month" }
                             button {
@@ -247,7 +247,7 @@ pub fn OrderPage(plan: String) -> Element {
 
                     if let Some(plan) = selected_plan_details {
                         p {
-                            "Spec: {plan.cpu_cores}C / {plan.memory_mb}MB RAM / {plan.storage_gb}GB SSD / {plan.bandwidth_mbps}Mbps / {format_traffic_gb(plan.traffic_gb)}"
+                            "Spec: {plan.cpu_cores}C / {plan.cpu_allowance_pct}% CPU Allowance / {plan.memory_mb}MB RAM / {plan.storage_gb}GB SSD / {plan.bandwidth_mbps}Mbps / {format_traffic_gb(plan.traffic_gb)}"
                         }
                         p { "Monthly Price: ${plan.monthly_price}" }
                     } else {

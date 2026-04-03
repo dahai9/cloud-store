@@ -1,15 +1,12 @@
 #!/bin/bash
 set -e
 
-# Configurable variables (can be overridden by environment variables)
-TRUST_PASSWORD="${TRUST_PASSWORD:-cloudstore123}"
 INCUS_PORT="${INCUS_PORT:-18443}"
 STORAGE_POOL_NAME="default"
 NETWORK_NAME="incusbr0"
 
 echo "==== Incus Node Deployment Script ===="
 echo "Port: $INCUS_PORT"
-echo "Trust Password: [HIDDEN]"
 
 # 1. OS Detection
 if [ -f /etc/os-release ]; then
@@ -57,7 +54,6 @@ modprobe vhost_vsock || true
 cat <<EOF > /tmp/incus-preseed.yaml
 config:
   core.https_address: :$INCUS_PORT
-  core.trust_password: $TRUST_PASSWORD
 networks:
 - config:
     ipv4.address: 10.0.100.1/24
@@ -66,14 +62,12 @@ networks:
   description: "Cloud Store NAT Bridge"
   name: $NETWORK_NAME
   type: bridge
-  project: default
 storage_pools:
 - config:
     source: /var/lib/incus/storage-pools/$STORAGE_POOL_NAME
   description: "Default storage pool"
   name: $STORAGE_POOL_NAME
   driver: dir
-  project: default
 profiles:
 - config: {}
   description: "Default Incus profile"
@@ -87,7 +81,6 @@ profiles:
       pool: $STORAGE_POOL_NAME
       type: disk
   name: default
-  project: default
 projects:
 - config:
     features.networks: "true"
@@ -106,4 +99,5 @@ incus admin init --preseed < /tmp/incus-preseed.yaml
 
 echo "==== Deployment Successful ===="
 echo "Incus is listening on port $INCUS_PORT"
-echo "You can now add this node to Cloud Store using this IP and the configured trust password."
+echo "If you need Cloud Store to connect remotely, generate a trust token with:"
+echo "  incus config trust add cloud-store-manager"

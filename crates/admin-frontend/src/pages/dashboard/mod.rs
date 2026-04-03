@@ -3,6 +3,7 @@ use dioxus::prelude::*;
 
 mod guests;
 mod instances;
+mod nat_port_leases;
 mod nodes;
 mod overview;
 mod plans;
@@ -10,6 +11,7 @@ mod tickets;
 
 pub use guests::GuestsPage;
 pub use instances::InstancesPage;
+pub use nat_port_leases::NatPortLeasesPage;
 pub use nodes::NodesPage;
 pub use overview::OverviewPage;
 pub use plans::PlansPage;
@@ -23,7 +25,9 @@ pub fn DashboardLayout() -> Element {
     if session().token.is_none() {
         return rsx! {
             div { class: "content",
-                section { class: "card", style: "max-width: 500px; margin: 50px auto; text-align: center;",
+                section {
+                    class: "card",
+                    style: "max-width: 500px; margin: 50px auto; text-align: center;",
                     h2 { "未登录" }
                     p { "请先登录管理员账号以访问此页面。" }
                     Link { to: Route::LoginPage {}, class: "btn-primary", "去登录" }
@@ -37,6 +41,7 @@ pub fn DashboardLayout() -> Element {
         s.token = None;
         s.profile = None;
         s.nodes.clear();
+        s.nat_port_leases.clear();
         s.plans.clear();
         s.guests.clear();
         s.tickets.clear();
@@ -56,12 +61,48 @@ pub fn DashboardLayout() -> Element {
                 }
 
                 nav { class: "menu",
-                    Link { class: "menu-item", active_class: "active", to: Route::OverviewPage {}, "Overview" }
-                    Link { class: "menu-item", active_class: "active", to: Route::NodesPage {}, "Nodes" }
-                    Link { class: "menu-item", active_class: "active", to: Route::InstancesPage {}, "Instances" }
-                    Link { class: "menu-item", active_class: "active", to: Route::PlansPage {}, "Products" }
-                    Link { class: "menu-item", active_class: "active", to: Route::GuestsPage {}, "Guests" }
-                    Link { class: "menu-item", active_class: "active", to: Route::TicketsPage {}, "Tickets" }
+                    Link {
+                        class: "menu-item",
+                        active_class: "active",
+                        to: Route::OverviewPage {},
+                        "Overview"
+                    }
+                    Link {
+                        class: "menu-item",
+                        active_class: "active",
+                        to: Route::NodesPage {},
+                        "Nodes"
+                    }
+                    Link {
+                        class: "menu-item",
+                        active_class: "active",
+                        to: Route::NatPortLeasesPage {},
+                        "NAT Leases"
+                    }
+                    Link {
+                        class: "menu-item",
+                        active_class: "active",
+                        to: Route::InstancesPage {},
+                        "Instances"
+                    }
+                    Link {
+                        class: "menu-item",
+                        active_class: "active",
+                        to: Route::PlansPage {},
+                        "Products"
+                    }
+                    Link {
+                        class: "menu-item",
+                        active_class: "active",
+                        to: Route::GuestsPage {},
+                        "Guests"
+                    }
+                    Link {
+                        class: "menu-item",
+                        active_class: "active",
+                        to: Route::TicketsPage {},
+                        "Tickets"
+                    }
                 }
             }
 

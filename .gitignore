@@ -7,3 +7,4 @@ target/
 .sqlx/
 data/*.db
 data/*.db-*
+data/incus-client.pem

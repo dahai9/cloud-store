@@ -39,6 +39,10 @@ pub fn LoginPage() -> Element {
                             let nodes = api::get_nodes(&api_base_val, &auth.token)
                                 .await
                                 .unwrap_or_default();
+                            let nat_port_leases =
+                                api::get_nat_port_leases(&api_base_val, &auth.token)
+                                    .await
+                                    .unwrap_or_default();
                             let plans = api::get_plans(&api_base_val, &auth.token)
                                 .await
                                 .unwrap_or_default();
@@ -53,6 +57,7 @@ pub fn LoginPage() -> Element {
                             s.token = Some(auth.token);
                             s.profile = Some(profile);
                             s.nodes = nodes;
+                            s.nat_port_leases = nat_port_leases;
                             s.plans = plans;
                             s.guests = guests;
                             s.tickets = tickets;
@@ -109,9 +114,7 @@ pub fn LoginPage() -> Element {
                 }
 
                 div { class: "actions",
-                    button { class: "btn-primary", onclick: do_login,
-                        "登录并验证管理员权限"
-                    }
+                    button { class: "btn-primary", onclick: do_login, "登录并验证管理员权限" }
                 }
 
                 if session().loading {

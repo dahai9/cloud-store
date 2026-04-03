@@ -140,11 +140,7 @@ pub fn NodesPage() -> Element {
         section { class: "card", id: "nodes",
             h2 { "节点管理" }
             div { class: "actions",
-                button {
-                    class: "btn-secondary",
-                    onclick: refresh_nodes,
-                    "刷新列表"
-                }
+                button { class: "btn-secondary", onclick: refresh_nodes, "刷新列表" }
                 button {
                     class: "btn-primary",
                     onclick: move |_| {
@@ -173,7 +169,7 @@ pub fn NodesPage() -> Element {
                                     value: "{name}",
                                     oninput: move |evt| name.set(evt.value()),
                                     required: true,
-                                    placeholder: "My Node 01"
+                                    placeholder: "My Node 01",
                                 }
                             }
                             div { class: "form-group",
@@ -182,7 +178,7 @@ pub fn NodesPage() -> Element {
                                     value: "{region}",
                                     oninput: move |evt| region.set(evt.value()),
                                     required: true,
-                                    placeholder: "US-West"
+                                    placeholder: "US-West",
                                 }
                             }
                             div { class: "form-group",
@@ -217,15 +213,15 @@ pub fn NodesPage() -> Element {
                                 input {
                                     value: "{endpoint}",
                                     oninput: move |evt| endpoint.set(evt.value()),
-                                    placeholder: "https://pve.example.com:8006/api2/json"
+                                    placeholder: "https://node.example.com:18443",
                                 }
                             }
                             div { class: "form-group",
-                                label { "API 令牌 (可选)" }
+                                label { "Incus 信任令牌 (可选)" }
                                 input {
                                     value: "{api_token}",
                                     oninput: move |evt| api_token.set(evt.value()),
-                                    placeholder: "USER@PVE!TOKENID=SECRET"
+                                    placeholder: "token from `incus config trust add <client-name>`",
                                 }
                             }
                             div { class: "modal-actions",
@@ -363,15 +359,24 @@ pub fn NodesPage() -> Element {
                             div { class: "metrics",
                                 div { class: "metric",
                                     span { "CPU: {node.cpu_cores_used} / {node.cpu_cores_total} Cores" }
-                                    progress { max: "{node.cpu_cores_total}", value: "{node.cpu_cores_used}" }
+                                    progress {
+                                        max: "{node.cpu_cores_total}",
+                                        value: "{node.cpu_cores_used}",
+                                    }
                                 }
                                 div { class: "metric",
                                     span { "RAM: {node.memory_mb_used} / {node.memory_mb_total} MB" }
-                                    progress { max: "{node.memory_mb_total}", value: "{node.memory_mb_used}" }
+                                    progress {
+                                        max: "{node.memory_mb_total}",
+                                        value: "{node.memory_mb_used}",
+                                    }
                                 }
                                 div { class: "metric",
                                     span { "Disk: {node.storage_gb_used} / {node.storage_gb_total} GB" }
-                                    progress { max: "{node.storage_gb_total}", value: "{node.storage_gb_used}" }
+                                    progress {
+                                        max: "{node.storage_gb_total}",
+                                        value: "{node.storage_gb_used}",
+                                    }
                                 }
                             }
                             if let Some(ep) = &node.api_endpoint {

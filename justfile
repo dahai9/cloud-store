@@ -14,6 +14,9 @@ check:
   just check-frontend
   just check-admin-frontend
 
+check-backend:
+  cargo check -p web-app -p worker -p provider-adapter
+
 check-frontend:
   cd crates/frontend && timeout 30s dx build --platform web
 
@@ -35,8 +38,14 @@ migrate:
 fmt:
   cargo fmt --all
 
+fmt-backend:
+  cargo fmt --package shared-domain --package provider-adapter --package web-app --package worker --package admin-frontend
+
 clippy:
   cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+clippy-backend:
+  cargo clippy --package shared-domain --package provider-adapter --package web-app --package worker --package admin-frontend --all-targets --all-features -- -D warnings
 
 test:
   cargo test --workspace

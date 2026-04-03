@@ -1,6 +1,6 @@
 use crate::pages::{
-    DashboardLayout, GuestsPage, InstancesPage, LoginPage, NodesPage, OverviewPage, PlansPage,
-    TicketsPage,
+    DashboardLayout, GuestsPage, InstancesPage, LoginPage, NatPortLeasesPage, NodesPage,
+    OverviewPage, PlansPage, TicketsPage,
 };
 use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -13,6 +13,8 @@ pub enum Route {
     OverviewPage {},
     #[route("/nodes")]
     NodesPage {},
+    #[route("/nat-port-leases")]
+    NatPortLeasesPage {},
     #[route("/instances")]
     InstancesPage {},
     #[route("/plans")]
@@ -82,6 +84,28 @@ pub struct NodeUpdateRequest {
 }
 
 #[derive(Clone, Deserialize, PartialEq)]
+pub struct NatPortLeaseItem {
+    pub id: String,
+    pub node_id: String,
+    pub node_name: String,
+    pub node_region: String,
+    pub public_ip: String,
+    pub start_port: i64,
+    pub end_port: i64,
+    pub reserved: bool,
+    pub reserved_for_order_id: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Clone, Serialize)]
+pub struct NatPortLeaseCreateRequest {
+    pub node_id: String,
+    pub public_ip: String,
+    pub start_port: i64,
+    pub end_port: i64,
+}
+
+#[derive(Clone, Deserialize, PartialEq)]
 pub struct InstanceItem {
     pub id: String,
     pub user_email: String,
@@ -101,6 +125,7 @@ pub struct AdminPlanItem {
     pub memory_mb: i64,
     pub storage_gb: i64,
     pub cpu_cores: i64,
+    pub cpu_allowance_pct: i64,
     pub bandwidth_mbps: i64,
     pub traffic_gb: i64,
     pub active: bool,
@@ -116,6 +141,7 @@ pub struct AdminPlanCreateRequest {
     pub memory_mb: i64,
     pub storage_gb: i64,
     pub cpu_cores: i64,
+    pub cpu_allowance_pct: i64,
     pub bandwidth_mbps: i64,
     pub traffic_gb: i64,
 }
@@ -128,6 +154,7 @@ pub struct AdminPlanUpdateRequest {
     pub memory_mb: Option<i64>,
     pub storage_gb: Option<i64>,
     pub cpu_cores: Option<i64>,
+    pub cpu_allowance_pct: Option<i64>,
     pub bandwidth_mbps: Option<i64>,
     pub traffic_gb: Option<i64>,
     pub active: Option<bool>,
@@ -172,6 +199,7 @@ pub struct AdminSessionState {
     pub token: Option<String>,
     pub profile: Option<AuthProfileResponse>,
     pub nodes: Vec<NodeItem>,
+    pub nat_port_leases: Vec<NatPortLeaseItem>,
     pub instances: Vec<InstanceItem>,
     pub plans: Vec<AdminPlanItem>,
     pub guests: Vec<GuestItem>,

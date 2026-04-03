@@ -8,7 +8,7 @@ mod tickets;
 
 use anyhow::Context;
 use axum::extract::State;
-use axum::{routing::get, routing::patch, routing::post, Json, Router};
+use axum::{routing::delete, routing::get, routing::patch, routing::post, Json, Router};
 use serde::Serialize;
 use sqlx::SqlitePool;
 use std::io::ErrorKind;
@@ -219,6 +219,18 @@ fn build_admin_router(app_state: AppState) -> Router {
         .route("/api/admin/nodes", get(admin::list_nodes))
         .route("/api/admin/nodes", post(admin::add_node))
         .route("/api/admin/nodes/{id}", patch(admin::update_node))
+        .route(
+            "/api/admin/nat-port-leases",
+            get(admin::list_nat_port_leases),
+        )
+        .route(
+            "/api/admin/nat-port-leases",
+            post(admin::add_nat_port_lease),
+        )
+        .route(
+            "/api/admin/nat-port-leases/{lease_id}",
+            delete(admin::delete_nat_port_lease),
+        )
         .route("/api/admin/instances", get(admin::list_instances))
         .route("/api/admin/plans", get(admin::list_plans))
         .route("/api/admin/plans", post(admin::add_plan))

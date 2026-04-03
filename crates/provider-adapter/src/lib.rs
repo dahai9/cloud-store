@@ -1,8 +1,20 @@
+use anyhow::Context;
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use shared_domain::NatPlan;
+use std::fs;
+use std::fs::OpenOptions;
+use std::io;
+use std::path::{Path, PathBuf};
+use std::thread;
+use std::time::{Duration, Instant};
 use uuid::Uuid;
+
+const DEFAULT_DATA_DIR: &str = "data";
+const INCUS_CLIENT_IDENTITY_FILE: &str = "incus-client.pem";
+const INCUS_CLIENT_IDENTITY_LOCK_FILE: &str = "incus-client.pem.lock";
+const INCUS_CLIENT_COMMON_NAME: &str = "cloud-store-manager";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProvisionRequest {
@@ -46,6 +58,25 @@ pub struct ConsoleToken {
 pub struct NodeConnection {
     pub endpoint: String,
     pub token: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct IncusResponseEnvelope {
+    #[serde(rename = "type")]
+    response_type: String,
+    #[serde(default)]
+    operation: Option<String>,
+    #[serde(default)]
+    error: String,
+    #[serde(default)]
+    metadata: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct IncusOperationState {
+    status: String,
+    #[serde(default)]
+    err: String,
 }
 
 #[async_trait]
@@ -106,29 +137,249 @@ pub trait ComputeProvider: Send + Sync {
 }
 
 pub struct IncusProvider {
-    client_cert_pem: String,
-    client_key_pem: String,
+    client_identity_pem: String,
 }
 
 impl IncusProvider {
     pub fn new() -> anyhow::Result<Self> {
-        let key_pair = rcgen::KeyPair::generate()?;
-        let mut params = rcgen::CertificateParams::new(vec!["cloud-store-manager".to_string()])?;
-        params
-            .distinguished_name
-            .push(rcgen::DnType::CommonName, "cloud-store-manager");
-        let cert = params.self_signed(&key_pair)?;
+        let client_identity_pem = Self::load_or_create_identity()?;
 
         Ok(Self {
-            client_cert_pem: cert.pem(),
-            client_key_pem: key_pair.serialize_pem(),
+            client_identity_pem,
         })
     }
 
+    fn data_dir() -> PathBuf {
+        std::env::var("CLOUD_STORE_DATA_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from(DEFAULT_DATA_DIR))
+    }
+
+    fn identity_path() -> PathBuf {
+        Self::data_dir().join(INCUS_CLIENT_IDENTITY_FILE)
+    }
+
+    fn lock_path() -> PathBuf {
+        Self::data_dir().join(INCUS_CLIENT_IDENTITY_LOCK_FILE)
+    }
+
+    fn load_or_create_identity() -> anyhow::Result<String> {
+        let identity_path = Self::identity_path();
+
+        if let Some(identity_pem) = Self::read_valid_identity(&identity_path)? {
+            return Ok(identity_pem);
+        }
+
+        Self::generate_and_persist_identity(&identity_path)
+    }
+
+    fn read_valid_identity(identity_path: &Path) -> anyhow::Result<Option<String>> {
+        match fs::read_to_string(identity_path) {
+            Ok(identity_pem) => {
+                if reqwest::Identity::from_pem(identity_pem.as_bytes()).is_ok() {
+                    Ok(Some(identity_pem))
+                } else {
+                    Ok(None)
+                }
+            }
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(err).with_context(|| {
+                format!(
+                    "failed to read persisted Incus client identity from {}",
+                    identity_path.display()
+                )
+            }),
+        }
+    }
+
+    fn generate_and_persist_identity(identity_path: &Path) -> anyhow::Result<String> {
+        if let Some(parent) = identity_path.parent() {
+            fs::create_dir_all(parent).with_context(|| {
+                format!(
+                    "failed to create data directory for {}",
+                    identity_path.display()
+                )
+            })?;
+        }
+
+        let lock_path = Self::lock_path();
+        let started_at = Instant::now();
+
+        loop {
+            match OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&lock_path)
+            {
+                Ok(lock_file) => {
+                    let identity_pem = Self::generate_identity_pem()?;
+                    let temp_path = identity_path.with_extension("tmp");
+
+                    fs::write(&temp_path, identity_pem.as_bytes()).with_context(|| {
+                        format!(
+                            "failed to write temporary Incus client identity to {}",
+                            temp_path.display()
+                        )
+                    })?;
+
+                    fs::rename(&temp_path, identity_path).with_context(|| {
+                        format!(
+                            "failed to persist Incus client identity to {}",
+                            identity_path.display()
+                        )
+                    })?;
+
+                    drop(lock_file);
+                    let _ = fs::remove_file(&lock_path);
+
+                    return Ok(identity_pem);
+                }
+                Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {
+                    if let Some(identity_pem) = Self::read_valid_identity(identity_path)? {
+                        return Ok(identity_pem);
+                    }
+
+                    if started_at.elapsed() > Duration::from_secs(5) {
+                        let _ = fs::remove_file(&lock_path);
+                    } else {
+                        thread::sleep(Duration::from_millis(50));
+                    }
+                }
+                Err(err) => {
+                    return Err(err).with_context(|| {
+                        format!(
+                            "failed to acquire Incus client identity lock at {}",
+                            lock_path.display()
+                        )
+                    });
+                }
+            }
+        }
+    }
+
+    fn generate_identity_pem() -> anyhow::Result<String> {
+        let key_pair = rcgen::KeyPair::generate()?;
+        let mut params = rcgen::CertificateParams::new(vec![INCUS_CLIENT_COMMON_NAME.to_string()])?;
+        params
+            .distinguished_name
+            .push(rcgen::DnType::CommonName, INCUS_CLIENT_COMMON_NAME);
+        let cert = params.self_signed(&key_pair)?;
+
+        Ok(format!("{}{}", cert.pem(), key_pair.serialize_pem()))
+    }
+
+    fn resolve_incus_url(base_endpoint: &str, url: &str) -> String {
+        if url.starts_with("http://") || url.starts_with("https://") {
+            url.to_owned()
+        } else if url.starts_with('/') {
+            format!("{}{}", base_endpoint.trim_end_matches('/'), url)
+        } else {
+            format!("{}/{}", base_endpoint.trim_end_matches('/'), url)
+        }
+    }
+
+    async fn wait_for_operation(
+        &self,
+        client: &Client,
+        node_endpoint: &str,
+        operation_url: &str,
+        action: &str,
+    ) -> anyhow::Result<()> {
+        let wait_url = format!(
+            "{}/wait?timeout=-1",
+            Self::resolve_incus_url(node_endpoint, operation_url).trim_end_matches('/')
+        );
+
+        let res = client
+            .get(&wait_url)
+            .send()
+            .await
+            .with_context(|| format!("failed to wait for {action} operation"))?;
+
+        if !res.status().is_success() {
+            anyhow::bail!(
+                "failed to wait for {action} operation: {}",
+                res.text().await?
+            );
+        }
+
+        let response: IncusResponseEnvelope = res
+            .json()
+            .await
+            .with_context(|| format!("failed to parse {action} operation response"))?;
+
+        let metadata = response.metadata.ok_or_else(|| {
+            anyhow::anyhow!("{action} operation did not return final operation state")
+        })?;
+        let operation: IncusOperationState = serde_json::from_value(metadata)
+            .with_context(|| format!("failed to decode {action} operation state"))?;
+
+        if operation.status != "Success" {
+            let err = if operation.err.is_empty() {
+                operation.status
+            } else {
+                operation.err
+            };
+
+            anyhow::bail!("{action} operation failed: {err}");
+        }
+
+        Ok(())
+    }
+
+    async fn submit_operation_request(
+        &self,
+        client: &Client,
+        request: reqwest::RequestBuilder,
+        node_endpoint: &str,
+        action: &str,
+    ) -> anyhow::Result<()> {
+        let res = request
+            .send()
+            .await
+            .with_context(|| format!("failed to send {action} request"))?;
+
+        if !res.status().is_success() {
+            anyhow::bail!("failed to {action}: {}", res.text().await?);
+        }
+
+        let response: IncusResponseEnvelope = res
+            .json()
+            .await
+            .with_context(|| format!("failed to parse {action} response"))?;
+
+        match response.response_type.as_str() {
+            "sync" => {
+                if response.error.is_empty() {
+                    Ok(())
+                } else {
+                    anyhow::bail!("failed to {action}: {}", response.error)
+                }
+            }
+            "async" => {
+                let operation_url = response.operation.ok_or_else(|| {
+                    anyhow::anyhow!("{action} response did not include an operation URL")
+                })?;
+
+                self.wait_for_operation(client, node_endpoint, &operation_url, action)
+                    .await
+            }
+            "error" => {
+                let error = if response.error.is_empty() {
+                    format!("{action} returned an error response")
+                } else {
+                    response.error
+                };
+
+                anyhow::bail!("failed to {action}: {error}");
+            }
+            other => anyhow::bail!("unexpected Incus response type '{other}' while {action}"),
+        }
+    }
+
     async fn get_client(&self) -> anyhow::Result<Client> {
-        let identity = reqwest::Identity::from_pem(
-            (self.client_cert_pem.clone() + &self.client_key_pem).as_bytes(),
-        )?;
+        let identity = reqwest::Identity::from_pem(self.client_identity_pem.as_bytes())
+            .context("failed to load Incus client identity")?;
 
         let client = Client::builder()
             .identity(identity)
@@ -148,28 +399,35 @@ impl IncusProvider {
             return Ok(());
         }
 
-        if let Some(password) = &node.token {
+        if let Some(trust_token) = &node.token {
             let trust_req = serde_json::json!({
                 "type": "client",
-                "password": password,
+                "trust_token": trust_token,
             });
 
-            let res = client
-                .post(format!("{}/1.0/certificates", node.endpoint))
+            let untrusted_url = format!("{}/1.0/certificates?public", node.endpoint);
+            let untrusted_res = client
+                .post(&untrusted_url)
                 .json(&trust_req)
                 .send()
-                .await?;
+                .await
+                .with_context(|| format!("failed to submit trust request to {untrusted_url}"))?;
 
-            if !res.status().is_success() {
-                anyhow::bail!(
-                    "failed to trust client certificate on node: {}",
-                    res.text().await?
-                );
+            if untrusted_res.status().is_success() {
+                return Ok(());
             }
 
-            Ok(())
+            let untrusted_status = untrusted_res.status();
+            let untrusted_body = untrusted_res
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read response body>".to_string());
+
+            anyhow::bail!(
+                "failed to trust client certificate on node; trust_token attempt (status {untrusted_status}) returned: {untrusted_body}"
+            );
         } else {
-            anyhow::bail!("node is not trusted and no trust password provided");
+            anyhow::bail!("node is not trusted and no trust token provided");
         }
     }
 }
@@ -196,6 +454,7 @@ impl ComputeProvider for IncusProvider {
             },
             "config": {
                 "limits.cpu": format!("{}", req.plan.cpu_cores),
+                "limits.cpu.allowance": format!("{}%", req.plan.cpu_allowance_pct),
                 "limits.memory": format!("{}MB", req.plan.memory_mb),
             },
             "devices": {
@@ -208,17 +467,17 @@ impl ComputeProvider for IncusProvider {
             }
         });
 
-        let res = client
-            .post(format!("{}/1.0/instances", node.endpoint))
-            .json(&create_req)
-            .send()
-            .await?;
+        self.submit_operation_request(
+            &client,
+            client
+                .post(format!("{}/1.0/instances", node.endpoint))
+                .json(&create_req),
+            &node.endpoint,
+            "create incus instance",
+        )
+        .await?;
 
-        if !res.status().is_success() {
-            anyhow::bail!("failed to create incus instance: {}", res.text().await?);
-        }
-
-        let _ = self.start_instance(node, &instance_name).await;
+        self.start_instance(node, &instance_name).await?;
 
         Ok(ProvisionResult {
             instance_id: instance_name,
@@ -236,14 +495,10 @@ impl ComputeProvider for IncusProvider {
                 "{}/1.0/instances/{}/state",
                 node.endpoint, instance_id
             ))
-            .json(&serde_json::json!({"action": "start"}))
-            .send()
-            .await?;
+            .json(&serde_json::json!({"action": "start"}));
 
-        if !res.status().is_success() {
-            anyhow::bail!("failed to start: {}", res.text().await?);
-        }
-        Ok(())
+        self.submit_operation_request(&client, res, &node.endpoint, "start instance")
+            .await
     }
 
     async fn stop_instance(&self, node: &NodeConnection, instance_id: &str) -> anyhow::Result<()> {
@@ -255,14 +510,10 @@ impl ComputeProvider for IncusProvider {
                 "{}/1.0/instances/{}/state",
                 node.endpoint, instance_id
             ))
-            .json(&serde_json::json!({"action": "stop", "force": true}))
-            .send()
-            .await?;
+            .json(&serde_json::json!({"action": "stop", "force": true}));
 
-        if !res.status().is_success() {
-            anyhow::bail!("failed to stop: {}", res.text().await?);
-        }
-        Ok(())
+        self.submit_operation_request(&client, res, &node.endpoint, "stop instance")
+            .await
     }
 
     async fn restart_instance(
@@ -278,14 +529,10 @@ impl ComputeProvider for IncusProvider {
                 "{}/1.0/instances/{}/state",
                 node.endpoint, instance_id
             ))
-            .json(&serde_json::json!({"action": "restart"}))
-            .send()
-            .await?;
+            .json(&serde_json::json!({"action": "restart"}));
 
-        if !res.status().is_success() {
-            anyhow::bail!("failed to restart: {}", res.text().await?);
-        }
-        Ok(())
+        self.submit_operation_request(&client, res, &node.endpoint, "restart instance")
+            .await
     }
 
     async fn reset_password(
@@ -422,14 +669,10 @@ impl ComputeProvider for IncusProvider {
         self.ensure_trusted(node).await?;
         let client = self.get_client().await?;
         let _ = self.stop_instance(node, instance_id).await;
-        let res = client
-            .delete(format!("{}/1.0/instances/{}", node.endpoint, instance_id))
-            .send()
-            .await?;
-        if !res.status().is_success() {
-            anyhow::bail!("failed to destroy: {}", res.text().await?);
-        }
-        Ok(())
+        let res = client.delete(format!("{}/1.0/instances/{}", node.endpoint, instance_id));
+
+        self.submit_operation_request(&client, res, &node.endpoint, "destroy instance")
+            .await
     }
 }
 
