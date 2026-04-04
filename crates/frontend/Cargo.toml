@@ -11,6 +11,22 @@ reqwest = { workspace = true }
 gloo-timers = { version = "0.3", features = ["futures"] }
 serde.workspace = true
 serde_json = { workspace = true }
+vte = "0.14"
+gloo-net = "0.6"
+futures-util = "0.3"
+futures-channel = "0.3"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-web-sys = { version = "0.3", features = ["Window", "Storage", "Location"] }
+web-sys = { version = "0.3", features = [
+    "Window",
+    "Storage",
+    "Location",
+    "KeyboardEvent",
+    "WebSocket",
+    "BinaryType",
+    "MessageEvent",
+    "CloseEvent",
+    "ErrorEvent",
+    "console",
+] }
+wasm-bindgen-futures = "0.4"

@@ -7,9 +7,14 @@ use std::fs;
 use std::fs::OpenOptions;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
+use tracing::{error, info};
 use uuid::Uuid;
+
+pub type WsStream =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 const DEFAULT_DATA_DIR: &str = "data";
 const INCUS_CLIENT_IDENTITY_FILE: &str = "incus-client.pem";
@@ -51,6 +56,7 @@ pub struct InstanceMetrics {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConsoleToken {
     pub url: String,
+    pub control_url: String,
     pub token: String,
 }
 
@@ -136,6 +142,7 @@ pub trait ComputeProvider: Send + Sync {
     ) -> anyhow::Result<ConsoleToken>;
 }
 
+#[derive(Clone)]
 pub struct IncusProvider {
     client_identity_pem: String,
 }
@@ -276,6 +283,62 @@ impl IncusProvider {
         } else {
             format!("{}/{}", base_endpoint.trim_end_matches('/'), url)
         }
+    }
+
+    fn console_ws_base(node_endpoint: &str) -> String {
+        if let Some(rest) = node_endpoint.strip_prefix("https://") {
+            format!("wss://{rest}")
+        } else if let Some(rest) = node_endpoint.strip_prefix("http://") {
+            format!("ws://{rest}")
+        } else if let Some(rest) = node_endpoint.strip_prefix("wss://") {
+            format!("wss://{rest}")
+        } else if let Some(rest) = node_endpoint.strip_prefix("ws://") {
+            format!("ws://{rest}")
+        } else {
+            format!("ws://{node_endpoint}")
+        }
+    }
+
+    fn build_console_ws_url(node_endpoint: &str, op_id: &str, secret: &str) -> String {
+        format!(
+            "{}/1.0/operations/{}/websocket?secret={}",
+            Self::console_ws_base(node_endpoint),
+            op_id,
+            secret
+        )
+    }
+
+    fn parse_console_token(
+        node_endpoint: &str,
+        body: &serde_json::Value,
+    ) -> anyhow::Result<ConsoleToken> {
+        let op_path = body["operation"].as_str().unwrap_or_default();
+        let op_id = op_path
+            .trim_end_matches('/')
+            .split('/')
+            .next_back()
+            .unwrap_or_default();
+
+        let mut fds = &body["metadata"]["fds"];
+        if fds.is_null() {
+            fds = &body["metadata"]["metadata"]["fds"];
+        }
+
+        let data_secret = fds["0"]
+            .as_str()
+            .unwrap_or_else(|| fds["control"].as_str().unwrap_or_default());
+        let control_secret = fds["control"].as_str().unwrap_or_default();
+
+        if op_id.is_empty() || data_secret.is_empty() {
+            error!(?body, "failed to extract console parameters from incus");
+            anyhow::bail!("failed to extract console parameters");
+        }
+
+        Ok(ConsoleToken {
+            url: Self::build_console_ws_url(node_endpoint, op_id, data_secret),
+            control_url: Self::build_console_ws_url(node_endpoint, op_id, control_secret),
+            token: data_secret.to_string(),
+        })
     }
 
     async fn wait_for_operation(
@@ -429,6 +492,46 @@ impl IncusProvider {
         } else {
             anyhow::bail!("node is not trusted and no trust token provided");
         }
+    }
+
+    /// Open a WebSocket connection to an Incus console endpoint using mTLS.
+    /// The returned stream can be split into sink/stream for bidirectional relay.
+    pub async fn open_console_ws(&self, url: &str) -> anyhow::Result<WsStream> {
+        use tokio_tungstenite::Connector;
+
+        // Ensure a crypto provider is installed for the process before using rustls builder.
+        // It's safe to call this multiple times (returns an Err we ignore).
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
+        // Build rustls client config with our client identity
+        let pem_bytes = self.client_identity_pem.as_bytes();
+
+        // Parse client cert and key from the combined PEM
+        let certs = rustls_pemfile::certs(&mut io::BufReader::new(pem_bytes))
+            .filter_map(|r| r.ok())
+            .collect::<Vec<_>>();
+        let key = rustls_pemfile::private_key(&mut io::BufReader::new(pem_bytes))
+            .context("failed to parse private key from client identity PEM")?
+            .context("no private key found in client identity PEM")?;
+
+        // We accept any server cert (self-signed Incus nodes)
+        let tls_config = rustls::ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(AcceptAnyCert))
+            .with_client_auth_cert(certs, key)
+            .context("failed to build rustls client config with client cert")?;
+
+        let connector = Connector::Rustls(Arc::new(tls_config));
+
+        let (ws_stream, _response) =
+            tokio_tungstenite::connect_async_tls_with_config(url, None, false, Some(connector))
+                .await
+                .with_context(|| {
+                    format!("failed to connect to Incus console WebSocket at {url}")
+                })?;
+
+        info!(url = %url, "connected to Incus console WebSocket");
+        Ok(ws_stream)
     }
 }
 
@@ -615,29 +718,13 @@ impl ComputeProvider for IncusProvider {
                 "{}/1.0/instances/{}/console",
                 node.endpoint, instance_id
             ))
-            .json(&serde_json::json!({"type": "vga"}))
+            .json(&serde_json::json!({"type": "console", "force": true}))
             .send()
             .await?;
 
         let body: serde_json::Value = res.json().await?;
-        let op_id = body["operation"]
-            .as_str()
-            .unwrap_or_default()
-            .split('/')
-            .next_back()
-            .unwrap_or_default();
-        let fds = &body["metadata"]["fds"];
-        let control_secret = fds["control"].as_str().unwrap_or_default();
-
-        Ok(ConsoleToken {
-            url: format!(
-                "ws{}/1.0/operations/{}/websocket?secret={}",
-                &node.endpoint[4..],
-                op_id,
-                control_secret
-            ),
-            token: control_secret.to_string(),
-        })
+        info!(response = ?body, "incus console response");
+        Self::parse_console_token(&node.endpoint, &body)
     }
 
     async fn attach_nat_ports(
@@ -673,6 +760,49 @@ impl ComputeProvider for IncusProvider {
 
         self.submit_operation_request(&client, res, &node.endpoint, "destroy instance")
             .await
+    }
+}
+
+/// A rustls certificate verifier that accepts any server certificate.
+/// This mirrors the `danger_accept_invalid_certs(true)` used by the reqwest client
+/// for connecting to Incus nodes with self-signed certificates.
+#[derive(Debug)]
+struct AcceptAnyCert;
+
+impl rustls::client::danger::ServerCertVerifier for AcceptAnyCert {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &rustls::pki_types::CertificateDer<'_>,
+        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
+        _server_name: &rustls::pki_types::ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: rustls::pki_types::UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::danger::ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        rustls::crypto::ring::default_provider()
+            .signature_verification_algorithms
+            .supported_schemes()
     }
 }
 
@@ -786,7 +916,74 @@ impl ComputeProvider for StubProvider {
     ) -> anyhow::Result<ConsoleToken> {
         Ok(ConsoleToken {
             url: "ws://localhost/stub-console".to_string(),
+            control_url: String::new(),
             token: "stub-token".to_string(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::IncusProvider;
+    use serde_json::json;
+
+    #[test]
+    fn parse_console_token_from_top_level_fds() {
+        let body = json!({
+            "operation": "/1.0/operations/4733b626-9a3b-4e51-ac2e-079fe52b6517",
+            "metadata": {
+                "fds": {
+                    "0": "9e9d95b891d74b1a3ae32be2ccc0e5b2f1050ce97cf20206ac47bf104cfe9f9b",
+                    "control": "703172d186dc68325b1db195ede6d56d17a1d92eee5a5c2a7fbba6460b65b390"
+                }
+            }
+        });
+
+        let token = IncusProvider::parse_console_token("https://104.233.202.113:18443", &body)
+            .expect("token should parse");
+
+        assert_eq!(
+            token.url,
+            "wss://104.233.202.113:18443/1.0/operations/4733b626-9a3b-4e51-ac2e-079fe52b6517/websocket?secret=9e9d95b891d74b1a3ae32be2ccc0e5b2f1050ce97cf20206ac47bf104cfe9f9b"
+        );
+        assert_eq!(
+            token.control_url,
+            "wss://104.233.202.113:18443/1.0/operations/4733b626-9a3b-4e51-ac2e-079fe52b6517/websocket?secret=703172d186dc68325b1db195ede6d56d17a1d92eee5a5c2a7fbba6460b65b390"
+        );
+        assert_eq!(
+            token.token,
+            "9e9d95b891d74b1a3ae32be2ccc0e5b2f1050ce97cf20206ac47bf104cfe9f9b"
+        );
+    }
+
+    #[test]
+    fn parse_console_token_from_nested_metadata_fds() {
+        let body = json!({
+            "operation": "/1.0/operations/10cf05a5-6a33-4f1d-a3d6-0716d0a68816/",
+            "metadata": {
+                "metadata": {
+                    "fds": {
+                        "0": "f5e83a440efd5d6b2fbbb7da6e704698c76f1251f014f7a0fea0651f52a3fa93",
+                        "control": "1799e04a5737cefd3a363f148b0e283b9115017301fb8d5c1fde487b3c05db8b"
+                    }
+                }
+            }
+        });
+
+        let token = IncusProvider::parse_console_token("http://104.233.202.113:18443", &body)
+            .expect("token should parse");
+
+        assert_eq!(
+            token.url,
+            "ws://104.233.202.113:18443/1.0/operations/10cf05a5-6a33-4f1d-a3d6-0716d0a68816/websocket?secret=f5e83a440efd5d6b2fbbb7da6e704698c76f1251f014f7a0fea0651f52a3fa93"
+        );
+        assert_eq!(
+            token.control_url,
+            "ws://104.233.202.113:18443/1.0/operations/10cf05a5-6a33-4f1d-a3d6-0716d0a68816/websocket?secret=1799e04a5737cefd3a363f148b0e283b9115017301fb8d5c1fde487b3c05db8b"
+        );
+        assert_eq!(
+            token.token,
+            "f5e83a440efd5d6b2fbbb7da6e704698c76f1251f014f7a0fea0651f52a3fa93"
+        );
     }
 }

@@ -196,31 +196,8 @@ pub fn InstanceDetailPage(id: String) -> Element {
 
     let on_console = {
         let id = id.clone();
-        let api_base = api_base.clone();
-        let token = token.clone();
         move |_| {
-            let id = id.clone();
-            let api_base = api_base.clone();
-            let token = token.clone();
-            spawn(async move {
-                match api::fetch_instance_console(&api_base, &token, &id).await {
-                    Ok(console) => {
-                        #[cfg(target_arch = "wasm32")]
-                        {
-                            if let Some(win) = web_sys::window() {
-                                let url = format!("{}?token={}", console.url, console.token);
-                                let _ = win.open_with_url_and_target(&url, "_blank");
-                            }
-                        }
-                        #[cfg(not(target_arch = "wasm32"))]
-                        {
-                            let _ = console;
-                            error.set(Some("Console only available in web browser".to_string()));
-                        }
-                    }
-                    Err(err) => error.set(Some(err)),
-                }
-            });
+            navigator.push(Route::ConsolePage { id: id.clone() });
         }
     };
 
@@ -852,6 +829,51 @@ pub fn LoginRequiredView() -> Element {
                         },
                         "Go To Login"
                     }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+pub fn ConsolePage(id: String) -> Element {
+    let session = use_context::<Signal<SessionState>>();
+    let state = session();
+    let navigator = use_navigator();
+
+    if state.token.is_none() {
+        return rsx! {
+            LoginRequiredView {}
+        };
+    }
+
+    let token = state.token.clone().unwrap();
+    let api_base = state.api_base.clone();
+
+    // Build the proxy WebSocket URL:
+    //   http://host:port  ->  ws://host:port/api/instances/{id}/console/ws?token=JWT
+    //   https://host:port ->  wss://host:port/api/instances/{id}/console/ws?token=JWT
+    let ws_url = crate::api::build_console_ws_url(&api_base, &id, &token);
+
+    rsx! {
+        DashboardShell { title: "Instance Console", active_tab: DashboardTab::Services,
+            div { class: "instance-detail-header",
+                button {
+                    class: "btn-secondary",
+                    onclick: move |_| {
+                        navigator
+                            .push(Route::InstanceDetailPage {
+                                id: id.clone(),
+                            });
+                    },
+                    "← Back to Instance"
+                }
+                h3 { "Interactive Console" }
+            }
+
+            div { class: "panel",
+                div { class: "terminal-wrapper",
+                    crate::terminal::TerminalView { url: ws_url.clone() }
                 }
             }
         }

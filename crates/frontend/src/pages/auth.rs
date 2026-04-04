@@ -124,9 +124,8 @@ pub fn LoginPage(source: Option<String>, plan: Option<String>) -> Element {
                             navigator
                                 .push(Route::OrderPage {
                                     plan: back_return_plan.clone(),
-                                }
-                                }
-                        }
+                                });
+                        } else {
                             navigator.push(Route::StorefrontPage {});
                         }
                     },

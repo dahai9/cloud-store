@@ -1,6 +1,7 @@
 mod api;
 mod models;
 mod pages;
+mod terminal;
 
 #[cfg(target_arch = "wasm32")]
 use dioxus::prelude::*;

@@ -7,9 +7,15 @@ license.workspace = true
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
+futures-util.workspace = true
 rcgen = "0.14.7"
 reqwest = { workspace = true, features = ["json", "rustls-tls"] }
+rustls = "0.23"
+rustls-pemfile = "2"
 serde.workspace = true
 serde_json.workspace = true
 shared-domain = { path = "../shared-domain" }
+tokio = { workspace = true }
+tokio-tungstenite.workspace = true
+tracing.workspace = true
 uuid.workspace = true

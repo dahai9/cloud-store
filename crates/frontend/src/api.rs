@@ -1,7 +1,7 @@
 use crate::models::{
     ActionRequest, AuthPayload, AuthProfileResponse, AuthTokenResponse, AuthTransportRisk,
-    ConsoleToken, InstanceAction, InstanceItem, InstanceMetrics, InvoiceItem,
-    PayPalCreateOrderRequest, PayPalCreateOrderResponse, PublicPlanItem, SessionState, TicketItem,
+    InstanceAction, InstanceItem, InstanceMetrics, InvoiceItem, PayPalCreateOrderRequest,
+    PayPalCreateOrderResponse, PublicPlanItem, SessionState, TicketItem,
 };
 
 use reqwest::Client;
@@ -54,6 +54,13 @@ pub fn auth_transport_notice(api_base: &str) -> Option<&'static str> {
             Some("当前 API 不是 HTTPS，出于安全原因已禁止提交账号信息。请先切换到 HTTPS。")
         }
     }
+}
+
+pub fn build_console_ws_url(api_base: &str, id: &str, token: &str) -> String {
+    let base = api_base
+        .replace("http://", "ws://")
+        .replace("https://", "wss://");
+    format!("{base}/api/instances/{id}/console/ws?token={token}")
 }
 
 pub fn load_initial_session() -> SessionState {
@@ -158,6 +165,31 @@ pub async fn authenticate_and_load(
         tickets,
         instances,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_console_ws_url;
+
+    #[test]
+    fn builds_ws_url_from_http_base() {
+        let url = build_console_ws_url("http://127.0.0.1:8081", "inst-123", "tok-abc");
+
+        assert_eq!(
+            url,
+            "ws://127.0.0.1:8081/api/instances/inst-123/console/ws?token=tok-abc"
+        );
+    }
+
+    #[test]
+    fn builds_ws_url_from_https_base() {
+        let url = build_console_ws_url("https://example.com", "inst-123", "tok-abc");
+
+        assert_eq!(
+            url,
+            "wss://example.com/api/instances/inst-123/console/ws?token=tok-abc"
+        );
+    }
 }
 
 pub async fn load_authenticated_bundle(
@@ -425,32 +457,6 @@ pub async fn fetch_instance_metrics(
     resp.json::<InstanceMetrics>()
         .await
         .map_err(|e| format!("failed to parse metrics response: {e}"))
-}
-
-pub async fn fetch_instance_console(
-    api_base: &str,
-    token: &str,
-    id: &str,
-) -> Result<ConsoleToken, String> {
-    let client = Client::new();
-    let url = format!("{api_base}/api/instances/{id}/console");
-    let resp = client
-        .get(&url)
-        .header("Authorization", &format!("Bearer {token}"))
-        .send()
-        .await
-        .map_err(|e| format!("failed to load console token: {e}"))?;
-
-    if !resp.status().is_success() {
-        return Err(format!(
-            "console token request failed with status {}",
-            resp.status()
-        ));
-    }
-
-    resp.json::<ConsoleToken>()
-        .await
-        .map_err(|e| format!("failed to parse console token response: {e}"))
 }
 
 fn load_persisted_session() -> Option<(String, AuthProfileResponse)> {

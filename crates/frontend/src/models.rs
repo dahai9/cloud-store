@@ -1,5 +1,5 @@
 use crate::pages::{
-    BalancePage, InstanceDetailPage, LoginPage, OrderPage, ProfilePage, ServicesPage,
+    BalancePage, ConsolePage, InstanceDetailPage, LoginPage, OrderPage, ProfilePage, ServicesPage,
     StorefrontPage, TicketsPage,
 };
 
@@ -29,6 +29,8 @@ pub enum Route {
     BalancePage {},
     #[route("/app/instances/:id")]
     InstanceDetailPage { id: String },
+    #[route("/app/instances/:id/console")]
+    ConsolePage { id: String },
 }
 
 #[derive(Clone, Copy, PartialEq)]

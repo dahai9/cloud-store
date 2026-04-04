@@ -198,6 +198,43 @@ pub async fn require_auth(
     })
 }
 
+/// Authenticate from a raw JWT token string (for WebSocket query param auth).
+pub async fn require_user_from_token(
+    token: &str,
+    state: &AppState,
+) -> Result<AuthUser, (StatusCode, &'static str)> {
+    let claims = parse_token(token, &state.session_secret)
+        .map_err(|_| (StatusCode::UNAUTHORIZED, "invalid token"))?;
+
+    if claims.exp <= Utc::now().timestamp() {
+        return Err((StatusCode::UNAUTHORIZED, "token expired"));
+    }
+
+    let user = sqlx::query_as::<_, (String, String, String, i64)>(
+        "SELECT id, email, role, COALESCE(disabled, 0) FROM users WHERE id = ? LIMIT 1",
+    )
+    .bind(&claims.sub)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to load auth user",
+        )
+    })?
+    .ok_or((StatusCode::UNAUTHORIZED, "user not found"))?;
+
+    if user.3 != 0 {
+        return Err((StatusCode::FORBIDDEN, "account disabled"));
+    }
+
+    Ok(AuthUser {
+        id: user.0,
+        email: user.1,
+        role: user.2,
+    })
+}
+
 pub async fn require_admin(
     headers: &HeaderMap,
     state: &AppState,

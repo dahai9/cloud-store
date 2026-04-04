@@ -12,7 +12,9 @@ mod public;
 
 pub use auth::LoginPage;
 
-pub use dashboard::{BalancePage, InstanceDetailPage, ProfilePage, ServicesPage, TicketsPage};
+pub use dashboard::{
+    BalancePage, ConsolePage, InstanceDetailPage, ProfilePage, ServicesPage, TicketsPage,
+};
 
 pub use public::{OrderPage, StorefrontPage};
 

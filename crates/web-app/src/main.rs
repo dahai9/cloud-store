@@ -165,7 +165,10 @@ fn cors_layer() -> CorsLayer {
     CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
-        .allow_headers(Any)
+        .allow_headers([
+            axum::http::header::AUTHORIZATION,
+            axum::http::header::CONTENT_TYPE,
+        ])
 }
 
 fn build_guest_router(app_state: AppState) -> Router {
@@ -206,6 +209,7 @@ fn build_guest_router(app_state: AppState) -> Router {
         )
         .route("/api/instances/{id}/metrics", get(instances::get_metrics))
         .route("/api/instances/{id}/console", get(instances::get_console))
+        .route("/api/instances/{id}/console/ws", get(instances::console_ws))
         .layer(cors_layer())
         .with_state(app_state)
 }
