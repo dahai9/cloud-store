@@ -17,7 +17,8 @@
 - `crates/shared-domain`: Common business logic, models (`NatPlan`, `Node`, `Instance`, `NatPortLease`), and enums shared across all crates.
 - `crates/provider-adapter`: Abstraction layer for interacting with VPS providers. Implements `ComputeProvider` with `IncusProvider` using certificate-based authentication.
 - `crates/worker`: Background worker for long-running tasks:
-  - **Provisioning**: Automated node selection based on capacity and NAT port lease availability.
+  - **Provisioning**: Automated node selection, container creation with secure root password initialization, and dynamic NAT allocation.
+  - **Synchronization**: Periodic synchronization of instance statuses and metrics from remote Incus nodes.
   - **Renewals**: Automated instance renewal processing.
   - **Reconciliation**: Expiring overdue invoices and maintenance.
 
