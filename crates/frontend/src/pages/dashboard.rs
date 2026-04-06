@@ -392,14 +392,14 @@ pub fn InstanceDetailPage(id: String) -> Element {
                     if let Some(m) = metrics() {
                         div { class: "metrics-grid",
                             MetricCardWithChart {
-                                title: "CPU Usage",
+                                title: "CPU",
                                 value: format!("{:.1}%", m.cpu_usage_percent),
                                 history: metrics_history().iter().map(|mh| mh.cpu_usage_percent).collect(),
                                 color: "#1f57cc",
                                 max_val: 100.0,
                             }
                             MetricCardWithChart {
-                                title: "RAM Usage",
+                                title: "RAM",
                                 value: format!("{:.0} MB", m.memory_used_mb),
                                 history: metrics_history().iter().map(|mh| mh.memory_used_mb).collect(),
                                 color: "#1dbf73",
@@ -407,14 +407,14 @@ pub fn InstanceDetailPage(id: String) -> Element {
                                 max_val: metrics_history().iter().map(|mh| mh.memory_used_mb).fold(0.0, f64::max).max(512.0),
                             }
                             MetricCardWithChart {
-                                title: "Net TX",
+                                title: "TX",
                                 value: format!("{:.1} KB/s", (m.network_tx_bytes as f64) / 1024.0),
                                 history: metrics_history().iter().map(|mh| mh.network_tx_bytes as f64).collect(),
                                 color: "#ff8b00",
                                 max_val: metrics_history().iter().map(|mh| mh.network_tx_bytes as f64).fold(0.0, f64::max).max(1024.0),
                             }
                             MetricCardWithChart {
-                                title: "Net RX",
+                                title: "RX",
                                 value: format!("{:.1} KB/s", (m.network_rx_bytes as f64) / 1024.0),
                                 history: metrics_history().iter().map(|mh| mh.network_rx_bytes as f64).collect(),
                                 color: "#9333ea",
@@ -1165,15 +1165,15 @@ fn MetricCardWithChart(
     color: &'static str,
     max_val: f64,
 ) -> Element {
-    let width = 120;
-    let height = 40;
+    let width = 200;
+    let height = 44;
 
-    // Create SVG polyline points
-    let points = if history.len() < 2 {
-        "".to_string()
+    // Create SVG points
+    let (line_points, fill_points) = if history.len() < 2 {
+        ("".to_string(), "".to_string())
     } else {
         let x_step = width as f64 / (history.len() - 1) as f64;
-        history
+        let coords: Vec<(f64, f64)> = history
             .iter()
             .enumerate()
             .map(|(i, &v)| {
@@ -1184,16 +1184,29 @@ fn MetricCardWithChart(
                     0.0
                 };
                 let y = height as f64 - (normalized_v * height as f64);
-                format!("{:.1},{:.1}", x, y)
+                (x, y)
             })
+            .collect();
+
+        let line_p = coords
+            .iter()
+            .map(|(x, y)| format!("{:.1},{:.1}", x, y))
             .collect::<Vec<_>>()
-            .join(" ")
+            .join(" ");
+
+        // To create a filled area, we need to close the shape by adding bottom-right and bottom-left points
+        let mut fill_p = line_p.clone();
+        if let Some((last_x, _)) = coords.last() {
+            fill_p.push_str(&format!(" {:.1},{:.1} {:.1},{:.1}", last_x, height, 0, height));
+        }
+
+        (line_p, fill_p)
     };
 
     rsx! {
         div { class: "metric-card-chart",
             div { class: "metric-info",
-                p { class: "muted small", "{title}" }
+                p { class: "muted", "{title}" }
                 p { class: "fact", "{value}" }
             }
             div { class: "metric-chart-container",
@@ -1203,13 +1216,21 @@ fn MetricCardWithChart(
                     view_box: "0 0 {width} {height}",
                     preserve_aspect_ratio: "none",
 
+                    // Area fill (semi-transparent)
+                    polygon {
+                        fill: "{color}",
+                        fill_opacity: "0.1",
+                        points: "{fill_points}",
+                    }
+
+                    // Top trend line
                     polyline {
                         fill: "none",
                         stroke: "{color}",
                         stroke_width: "2",
                         stroke_linecap: "round",
                         stroke_linejoin: "round",
-                        points: "{points}",
+                        points: "{line_points}",
                     }
                 }
             }

@@ -56,3 +56,6 @@ clippy-backend:
 
 test:
   cargo test --workspace
+
+seed:
+  sqlite3 data/cloud_store.db < scripts/seed_dev_data.sql

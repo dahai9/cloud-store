@@ -57,8 +57,6 @@
           shellHook = ''
             export RUST_LOG=info
             export APP_ENV=development
-            export BROWSER_BIN=${pkgs.lib.getExe pkgs.chromium}
-            source .venv/bin/activate
           '';
         };
       }

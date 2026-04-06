@@ -1,1 +1,0 @@
-ALTER TABLE nat_plans ADD COLUMN nat_port_limit INT NOT NULL DEFAULT 5;

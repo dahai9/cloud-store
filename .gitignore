@@ -8,3 +8,5 @@ target/
 data/*.db
 data/*.db-*
 data/incus-client.pem
+scripts/seed_dev_data.sql
+/data/
