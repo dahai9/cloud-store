@@ -9,6 +9,7 @@ use futures_util::{SinkExt, StreamExt};
 use provider_adapter::{ComputeProvider, IncusProvider, NodeConnection};
 use serde::{Deserialize, Serialize};
 use shared_domain::{InstanceStatus, DEFAULT_OS_TEMPLATE};
+use sqlx::Row;
 use tokio_tungstenite::tungstenite::Message as TungMessage;
 use tracing::{debug, error, info, warn};
 
@@ -19,7 +20,26 @@ pub struct InstanceItem {
     pub plan_id: String,
     pub status: String,
     pub os_template: String,
+    pub root_password: Option<String>,
     pub created_at: String,
+    pub nat_ip: Option<String>,
+    pub nat_port_range: Option<String>,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct NatMappingItem {
+    pub id: String,
+    pub internal_port: i32,
+    pub external_port: i32,
+    pub protocol: String,
+    pub created_at: String,
+}
+
+#[derive(Deserialize)]
+pub struct CreateNatMappingRequest {
+    pub internal_port: i32,
+    pub external_port: i32,
+    pub protocol: String,
 }
 
 #[derive(Deserialize)]
@@ -37,14 +57,37 @@ pub struct ActionRequest {
     pub action: InstanceAction,
 }
 
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum BrowserConsoleMessage {
+    Resize { rows: usize, cols: usize },
+}
+
+const MIN_TERMINAL_ROWS: usize = 8;
+const MAX_TERMINAL_ROWS: usize = 400;
+const MIN_TERMINAL_COLS: usize = 20;
+const MAX_TERMINAL_COLS: usize = 800;
+
+fn validate_resize(rows: usize, cols: usize) -> Option<(usize, usize)> {
+    if !(MIN_TERMINAL_ROWS..=MAX_TERMINAL_ROWS).contains(&rows) {
+        return None;
+    }
+
+    if !(MIN_TERMINAL_COLS..=MAX_TERMINAL_COLS).contains(&cols) {
+        return None;
+    }
+
+    Some((rows, cols))
+}
+
 pub async fn list_instances(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Vec<InstanceItem>>, (StatusCode, &'static str)> {
     let user = auth::require_user(&headers, &state).await?;
 
-    let rows = sqlx::query_as::<_, (String, String, String, String, String, String)>(
-        "SELECT id, node_id, plan_id, status, os_template, created_at FROM instances WHERE user_id = ? ORDER BY created_at DESC",
+    let rows = sqlx::query_as::<_, (String, String, String, String, String, Option<String>, String)>(
+        "SELECT id, node_id, plan_id, status, os_template, root_password, created_at FROM instances WHERE user_id = ? AND status != 'deleted' ORDER BY created_at DESC",
     )
     .bind(&user.id)
     .fetch_all(&state.db)
@@ -57,13 +100,27 @@ pub async fn list_instances(
     let items = rows
         .into_iter()
         .map(
-            |(id, node_id, plan_id, status, os_template, created_at)| InstanceItem {
-                id,
-                node_id,
-                plan_id,
-                status,
-                os_template,
-                created_at,
+            |(id, node_id, plan_id, status, os_template, root_password, created_at)| {
+                let status = match status.to_lowercase().as_str() {
+                    "pending" => "pending",
+                    "starting" => "starting",
+                    "running" => "running",
+                    "stopped" => "stopped",
+                    "suspended" => "suspended",
+                    "deleted" => "deleted",
+                    _ => "unknown",
+                };
+                InstanceItem {
+                    id,
+                    node_id,
+                    plan_id,
+                    status: status.to_string(),
+                    os_template,
+                    root_password,
+                    created_at,
+                    nat_ip: None,
+                    nat_port_range: None,
+                }
             },
         )
         .collect();
@@ -78,8 +135,13 @@ pub async fn get_instance(
 ) -> Result<Json<InstanceItem>, (StatusCode, &'static str)> {
     let user = auth::require_user(&headers, &state).await?;
 
-    let row = sqlx::query_as::<_, (String, String, String, String, String, String)>(
-        "SELECT id, node_id, plan_id, status, os_template, created_at FROM instances WHERE id = ? AND user_id = ? LIMIT 1",
+    let row = sqlx::query(
+        "SELECT i.id, i.node_id, i.plan_id, i.status, i.os_template, i.root_password, i.created_at,
+                l.public_ip, l.start_port, l.end_port
+         FROM instances i
+         LEFT JOIN orders o ON i.order_id = o.id
+         LEFT JOIN nat_port_leases l ON l.node_id = i.node_id AND l.reserved_for_order_id = o.id
+         WHERE i.id = ? AND i.user_id = ? LIMIT 1"
     )
     .bind(&id)
     .bind(&user.id)
@@ -91,14 +153,301 @@ pub async fn get_instance(
     })?
     .ok_or((StatusCode::NOT_FOUND, "instance not found"))?;
 
+    let start_port: Option<i64> = row.get("start_port");
+    let end_port: Option<i64> = row.get("end_port");
+    let port_range = if let (Some(s), Some(e)) = (start_port, end_port) {
+        Some(format!("{}-{}", s, e))
+    } else {
+        None
+    };
+
     Ok(Json(InstanceItem {
-        id: row.0,
-        node_id: row.1,
-        plan_id: row.2,
-        status: row.3,
-        os_template: row.4,
-        created_at: row.5,
+        id: row.get("id"),
+        node_id: row.get("node_id"),
+        plan_id: row.get("plan_id"),
+        status: row.get("status"),
+        os_template: row.get("os_template"),
+        root_password: row.get("root_password"),
+        created_at: row.get("created_at"),
+        nat_ip: row.get("public_ip"),
+        nat_port_range: port_range,
     }))
+}
+
+pub async fn list_nat_mappings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(instance_id): Path<String>,
+) -> Result<Json<Vec<NatMappingItem>>, (StatusCode, &'static str)> {
+    let user = auth::require_user(&headers, &state).await?;
+
+    // Verify ownership
+    let _ = sqlx::query_scalar::<_, String>("SELECT id FROM instances WHERE id = ? AND user_id = ?")
+        .bind(&instance_id)
+        .bind(&user.id)
+        .fetch_optional(&state.db)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?
+        .ok_or((StatusCode::FORBIDDEN, "access denied"))?;
+
+    let rows = sqlx::query_as::<_, (String, i64, i64, String, String)>(
+        "SELECT id, internal_port, external_port, protocol, created_at FROM nat_mappings WHERE instance_id = ? ORDER BY created_at DESC",
+    )
+    .bind(&instance_id)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load mappings"))?;
+
+    let items = rows.into_iter().map(|r| NatMappingItem {
+        id: r.0,
+        internal_port: r.1 as i32,
+        external_port: r.2 as i32,
+        protocol: r.3,
+        created_at: r.4,
+    }).collect();
+
+    Ok(Json(items))
+}
+
+pub async fn add_nat_mapping(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(instance_id): Path<String>,
+    Json(payload): Json<CreateNatMappingRequest>,
+) -> Result<Json<NatMappingItem>, (StatusCode, &'static str)> {
+    let user = auth::require_user(&headers, &state).await?;
+
+    // Verify ownership and get node details
+    let instance = sqlx::query_as::<_, (String, String, String, Option<String>, i64)>(
+        "SELECT i.id, i.node_id, n.api_endpoint, n.api_token, p.nat_port_limit
+         FROM instances i
+         JOIN nodes n ON i.node_id = n.id
+         JOIN nat_plans p ON i.plan_id = p.id
+         WHERE i.id = ? AND i.user_id = ? LIMIT 1",
+    )
+    .bind(&instance_id)
+    .bind(&user.id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|e| {
+        error!(error = %e, "db error");
+        (StatusCode::INTERNAL_SERVER_ERROR, "db error")
+    })?
+    .ok_or((StatusCode::FORBIDDEN, "access denied"))?;
+
+    let node_id = instance.1;
+    let nat_limit = instance.4;
+
+    // Check mapping count
+    let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM nat_mappings WHERE instance_id = ?")
+        .bind(&instance_id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
+
+    if count >= nat_limit {
+        return Err((StatusCode::BAD_REQUEST, "NAT mapping limit reached"));
+    }
+
+    // Check if external port is in pool for this node
+    let pool_match = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM nat_port_leases WHERE node_id = ? AND ? BETWEEN start_port AND end_port"
+    )
+    .bind(&node_id)
+    .bind(payload.external_port)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
+
+    if pool_match == 0 {
+        return Err((StatusCode::BAD_REQUEST, "External port is not in the allowed pool for this node"));
+    }
+
+    // Check if external port is already used
+    let used = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM nat_mappings m JOIN instances i ON m.instance_id = i.id WHERE i.node_id = ? AND m.external_port = ? AND m.protocol = ?"
+    )
+    .bind(&node_id)
+    .bind(payload.external_port)
+    .bind(&payload.protocol)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
+
+    if used > 0 {
+        return Err((StatusCode::CONFLICT, "External port is already in use"));
+    }
+
+    // Get Public IP for NAT
+    let public_ip = sqlx::query_scalar::<_, String>(
+        "SELECT public_ip FROM nat_port_leases WHERE node_id = ? AND ? BETWEEN start_port AND end_port LIMIT 1"
+    )
+    .bind(&node_id)
+    .bind(payload.external_port)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to find public ip"))?;
+
+    // Apply via provider
+    let node_conn = NodeConnection {
+        endpoint: instance.2,
+        token: instance.3,
+    };
+    let provider = IncusProvider::new().map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "provider error"))?;
+    
+    // Get provider instance id
+    let provider_instance_id = sqlx::query_scalar::<_, String>("SELECT provider_instance_id FROM instances WHERE id = ?")
+        .bind(&instance_id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
+
+    provider.add_nat_mapping(&node_conn, &provider_instance_id, &public_ip, payload.internal_port, payload.external_port, &payload.protocol).await
+        .map_err(|e| {
+            error!(
+                error = %e,
+                user_id = %user.id,
+                instance_id = %instance_id,
+                internal_port = payload.internal_port,
+                external_port = payload.external_port,
+                protocol = %payload.protocol,
+                "failed to add nat mapping via provider"
+            );
+            (StatusCode::INTERNAL_SERVER_ERROR, "failed to apply NAT mapping on node")
+        })?;
+
+    // Store in DB
+    let id = uuid::Uuid::new_v4().to_string();
+    sqlx::query("INSERT INTO nat_mappings (id, instance_id, internal_port, external_port, protocol) VALUES (?, ?, ?, ?, ?)")
+        .bind(&id)
+        .bind(&instance_id)
+        .bind(payload.internal_port)
+        .bind(payload.external_port)
+        .bind(&payload.protocol)
+        .execute(&state.db)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
+
+    let created_at = sqlx::query_scalar::<_, String>("SELECT created_at FROM nat_mappings WHERE id = ?")
+        .bind(&id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
+
+    info!(
+        user_id = %user.id,
+        instance_id = %instance_id,
+        internal_port = payload.internal_port,
+        external_port = payload.external_port,
+        protocol = %payload.protocol,
+        "nat mapping added"
+    );
+
+    Ok(Json(NatMappingItem {
+        id,
+        internal_port: payload.internal_port,
+        external_port: payload.external_port,
+        protocol: payload.protocol,
+        created_at,
+    }))
+}
+
+pub async fn remove_nat_mapping(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((instance_id, mapping_id)): Path<(String, String)>,
+) -> Result<StatusCode, (StatusCode, &'static str)> {
+    let user = auth::require_user(&headers, &state).await?;
+
+    // Verify ownership and get details
+    let mapping = sqlx::query_as::<_, (i64, String, String, Option<String>, Option<String>)>(
+        "SELECT m.external_port, m.protocol, n.api_endpoint, n.api_token, i.provider_instance_id
+         FROM nat_mappings m
+         JOIN instances i ON m.instance_id = i.id
+         JOIN nodes n ON i.node_id = n.id
+         WHERE m.id = ? AND i.id = ? AND i.user_id = ? LIMIT 1",
+    )
+    .bind(&mapping_id)
+    .bind(&instance_id)
+    .bind(&user.id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?
+    .ok_or((StatusCode::FORBIDDEN, "access denied"))?;
+
+    let provider_instance_id = mapping.4.ok_or((StatusCode::BAD_REQUEST, "instance not provisioned"))?;
+    let node_conn = NodeConnection {
+        endpoint: mapping.2,
+        token: mapping.3,
+    };
+
+    // Remove via provider
+    let provider = IncusProvider::new().map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "provider error"))?;
+    
+    if let Err(e) = provider.remove_nat_mapping(&node_conn, &provider_instance_id, mapping.0 as i32, &mapping.1).await {
+        error!(
+            error = %e,
+            user_id = %user.id,
+            instance_id = %instance_id,
+            external_port = mapping.0,
+            protocol = %mapping.1,
+            "failed to remove NAT mapping on node"
+        );
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, "failed to remove NAT mapping on node"));
+    }
+
+    // Delete from DB
+    sqlx::query("DELETE FROM nat_mappings WHERE id = ?")
+        .bind(&mapping_id)
+        .execute(&state.db)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
+
+    info!(
+        user_id = %user.id,
+        instance_id = %instance_id,
+        external_port = mapping.0,
+        protocol = %mapping.1,
+        "nat mapping removed"
+    );
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Serialize)]
+pub struct ActionResponse {
+    pub message: String,
+    pub new_password: Option<String>,
+}
+
+fn generate_strong_password(length: usize) -> String {
+    use rand::distributions::Alphanumeric;
+    use rand::{thread_rng, Rng};
+
+    let mut rng = thread_rng();
+    let special_chars = b"!@#$%^&*()-_=+[]{}<>?";
+
+    loop {
+        let pwd: Vec<u8> = (0..length)
+            .map(|_| {
+                if rng.gen_bool(0.2) {
+                    special_chars[rng.gen_range(0..special_chars.len())]
+                } else {
+                    rng.sample(Alphanumeric)
+                }
+            })
+            .collect();
+
+        // Validate strength
+        let has_upper = pwd.iter().any(|&c| (c as char).is_uppercase());
+        let has_lower = pwd.iter().any(|&c| (c as char).is_lowercase());
+        let has_digit = pwd.iter().any(|&c| (c as char).is_numeric());
+        let has_special = pwd.iter().any(|&c| special_chars.contains(&c));
+
+        if has_upper && has_lower && has_digit && has_special {
+            return String::from_utf8(pwd).unwrap();
+        }
+    }
 }
 
 pub async fn perform_action(
@@ -106,7 +455,7 @@ pub async fn perform_action(
     headers: HeaderMap,
     Path(id): Path<String>,
     Json(payload): Json<ActionRequest>,
-) -> Result<StatusCode, (StatusCode, &'static str)> {
+) -> Result<Json<ActionResponse>, (StatusCode, &'static str)> {
     let user = auth::require_user(&headers, &state).await?;
 
     let row = sqlx::query_as::<_, (String, Option<String>, String, Option<String>)>(
@@ -143,66 +492,102 @@ pub async fn perform_action(
         )
     })?;
 
-    match payload.action {
+    let mut response_password = None;
+    let action_str = match &payload.action {
+        InstanceAction::Start => "start",
+        InstanceAction::Stop => "stop",
+        InstanceAction::Restart => "restart",
+        InstanceAction::ResetPassword { .. } => "reset_password",
+        InstanceAction::Reinstall { .. } => "reinstall",
+    };
+
+    let result = match payload.action {
         InstanceAction::Start => {
             provider
                 .start_instance(&node_conn, &provider_instance_id)
                 .await
-                .map_err(|_| {
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "failed to start instance",
-                    )
-                })?;
-            update_status(&state, &id, InstanceStatus::Starting).await?;
+                .map(|_| {
+                    let _ = update_status(&state, &id, InstanceStatus::Starting);
+                })
+                .map_err(|e| e.to_string())
         }
         InstanceAction::Stop => {
             provider
                 .stop_instance(&node_conn, &provider_instance_id)
                 .await
-                .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to stop instance"))?;
-            update_status(&state, &id, InstanceStatus::Stopped).await?;
+                .map(|_| {
+                    let _ = update_status(&state, &id, InstanceStatus::Stopped);
+                })
+                .map_err(|e| e.to_string())
         }
         InstanceAction::Restart => {
             provider
                 .restart_instance(&node_conn, &provider_instance_id)
                 .await
-                .map_err(|_| {
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "failed to restart instance",
-                    )
-                })?;
-            update_status(&state, &id, InstanceStatus::Starting).await?;
+                .map(|_| {
+                    let _ = update_status(&state, &id, InstanceStatus::Starting);
+                })
+                .map_err(|e| e.to_string())
         }
         InstanceAction::ResetPassword { new_password } => {
-            let pwd = new_password.unwrap_or_else(|| "RandomPassword123!".to_string());
-            provider
+            let pwd = new_password.unwrap_or_else(|| generate_strong_password(11));
+            let res = provider
                 .reset_password(&node_conn, &provider_instance_id, &pwd)
-                .await
-                .map_err(|_| {
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "failed to reset password",
-                    )
-                })?;
+                .await;
+
+            if res.is_ok() {
+                // Update password in DB
+                let _ = sqlx::query("UPDATE instances SET root_password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+                    .bind(&pwd)
+                    .bind(&id)
+                    .execute(&state.db)
+                    .await;
+                response_password = Some(pwd);
+                Ok(())
+            } else {
+                res.map_err(|e| e.to_string())
+            }
         }
         InstanceAction::Reinstall { os_template } => {
             let template = os_template.unwrap_or_else(|| DEFAULT_OS_TEMPLATE.to_string());
             provider
                 .reinstall_instance(&node_conn, &provider_instance_id, &template)
                 .await
-                .map_err(|_| {
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "failed to reinstall instance",
-                    )
-                })?;
-            update_status(&state, &id, InstanceStatus::Pending).await?;
+                .map(|_| {
+                    let _ = update_status(&state, &id, InstanceStatus::Pending);
+                })
+                .map_err(|e| e.to_string())
+        }
+    };
+
+    match result {
+        Ok(_) => {
+            info!(
+                user_id = %user.id,
+                resource_type = "instance",
+                resource_id = %id,
+                action = %action_str,
+                status = "success",
+                "action performed"
+            );
+            Ok(Json(ActionResponse {
+                message: "Action accepted".to_string(),
+                new_password: response_password,
+            }))
+        }
+        Err(err) => {
+            error!(
+                user_id = %user.id,
+                resource_type = "instance",
+                resource_id = %id,
+                action = %action_str,
+                status = "failed",
+                error = %err,
+                "action failed"
+            );
+            Err((StatusCode::INTERNAL_SERVER_ERROR, "action failed"))
         }
     }
-
-    Ok(StatusCode::ACCEPTED)
 }
 
 pub async fn get_metrics(
@@ -288,7 +673,7 @@ pub async fn get_console(
         )
     })?;
     let token: provider_adapter::ConsoleToken = provider
-        .get_console_token(&node_conn, &provider_instance_id)
+        .get_exec_token(&node_conn, &provider_instance_id)
         .await
         .map_err(|_| {
             (
@@ -312,6 +697,7 @@ async fn update_status(
         InstanceStatus::Stopped => "stopped",
         InstanceStatus::Suspended => "suspended",
         InstanceStatus::Deleted => "deleted",
+        InstanceStatus::Unknown => "unknown",
     };
 
     sqlx::query("UPDATE instances SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
@@ -375,13 +761,13 @@ pub async fn console_ws(
 
     // Get the console token (this creates the console session on Incus)
     let console_token = provider
-        .get_console_token(&node_conn, &provider_instance_id)
+        .get_exec_token(&node_conn, &provider_instance_id)
         .await
         .map_err(|err| {
-            error!(error = %err, "failed to get console token");
+            error!(error = %err, "failed to get exec token");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to get console token",
+                "failed to get exec token",
             )
         })?;
 
@@ -421,7 +807,7 @@ async fn relay_console(
     }
 
     info!("RELAY_CONSOLE: connecting to control websocket first");
-    let mut control_ws = {
+    let control_ws = {
         let mut last_err: Option<anyhow::Error> = None;
         let mut connected = None;
 
@@ -470,26 +856,56 @@ async fn relay_console(
         })?;
     info!("RELAY_CONSOLE: data websocket connected successfully");
 
-    let control_task = Some(tokio::spawn(async move {
-        info!("RELAY_CONSOLE: control drain task started");
+    let (mut control_sink, mut control_stream) = control_ws.split();
+    let (control_send_tx, mut control_send_rx) =
+        tokio::sync::mpsc::unbounded_channel::<TungMessage>();
 
-        while let Some(msg) = control_ws.next().await {
-            match msg {
-                Ok(TungMessage::Ping(payload)) => {
-                    if let Err(err) = control_ws.send(TungMessage::Pong(payload)).await {
-                        warn!(error = %err, "RELAY_CONSOLE: control websocket pong failed");
-                        break;
-                    }
-                }
-                Ok(TungMessage::Close(_)) => break,
-                Err(err) => {
-                    warn!(error = %err, "RELAY_CONSOLE: control websocket stream error");
-                    break;
-                }
-                _ => {}
+    let control_writer_task = Some(tokio::spawn(async move {
+        info!("RELAY_CONSOLE: control writer task started");
+
+        while let Some(msg) = control_send_rx.recv().await {
+            if control_sink.send(msg).await.is_err() {
+                warn!("RELAY_CONSOLE: control websocket send failed");
+                break;
             }
         }
-        info!("RELAY_CONSOLE: control drain task ended");
+
+        info!("RELAY_CONSOLE: control writer task ended");
+    }));
+
+    let control_reader_task = Some(tokio::spawn({
+        let control_send_tx = control_send_tx.clone();
+        async move {
+            info!("RELAY_CONSOLE: control drain task started");
+
+            while let Some(msg) = control_stream.next().await {
+                match msg {
+                    Ok(TungMessage::Text(text)) => {
+                        info!(response = %text, "RELAY_CONSOLE: received text from Incus control channel");
+                    }
+                    Ok(TungMessage::Binary(bin)) => {
+                        info!(len = bin.len(), "RELAY_CONSOLE: received binary from Incus control channel");
+                    }
+                    Ok(TungMessage::Ping(payload)) => {
+                        if control_send_tx.send(TungMessage::Pong(payload)).is_err() {
+                            warn!("RELAY_CONSOLE: control pong queue closed");
+                            break;
+                        }
+                    }
+                    Ok(TungMessage::Close(frame)) => {
+                        info!(frame = ?frame, "RELAY_CONSOLE: control channel closed by Incus");
+                        break;
+                    }
+                    Err(err) => {
+                        warn!(error = %err, "RELAY_CONSOLE: control websocket stream error");
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+
+            info!("RELAY_CONSOLE: control drain task ended");
+        }
     }));
 
     info!("relay_console: proceeding to split websockets");
@@ -529,11 +945,50 @@ async fn relay_console(
                     }
                     Some(Ok(AxumMessage::Text(text))) => {
                         browser_msg_count += 1;
-                        debug!("relay_console: browser→incus received message #{}", browser_msg_count);
-                        debug!("relay_console: browser→incus #{}: text", browser_msg_count);
-                        if incus_sink.send(TungMessage::Binary(text.as_bytes().to_vec().into())).await.is_err() {
-                            info!("relay_console: browser→incus: incus sink closed");
-                            break;
+                        let text = text.to_string();
+
+                        match serde_json::from_str::<BrowserConsoleMessage>(&text) {
+                            Ok(BrowserConsoleMessage::Resize { rows, cols }) => {
+                                let Some((rows, cols)) = validate_resize(rows, cols) else {
+                                    warn!(
+                                        rows = rows,
+                                        cols = cols,
+                                        "relay_console: dropping out-of-range resize request"
+                                    );
+                                    continue;
+                                };
+
+                                info!(rows = rows, cols = cols, "relay_console: browser resize requested");
+
+                                let control_message = TungMessage::Text(
+                                    serde_json::json!({
+                                        "command": "window-resize",
+                                        "args": {
+                                            "width": cols.to_string(),
+                                            "height": rows.to_string(),
+                                        }
+                                    })
+                                    .to_string()
+                                    .into(),
+                                );
+
+                                if control_send_tx.send(control_message).is_err() {
+                                    warn!("relay_console: control queue closed while sending resize");
+                                    break;
+                                }
+
+                                info!(rows = rows, cols = cols, "relay_console: forwarded window-resize to Incus");
+
+                                continue;
+                            }
+                            Err(err) => {
+                                warn!(
+                                    error = %err,
+                                    message_size = text.len(),
+                                    "relay_console: dropping unknown text control message"
+                                );
+                                continue;
+                            }
                         }
                     }
                     Some(Ok(AxumMessage::Close(_))) => {
@@ -617,7 +1072,11 @@ async fn relay_console(
 
     info!("relay_console: relay session ended");
 
-    if let Some(task) = control_task {
+    if let Some(task) = control_reader_task {
+        task.abort();
+    }
+
+    if let Some(task) = control_writer_task {
         task.abort();
     }
 

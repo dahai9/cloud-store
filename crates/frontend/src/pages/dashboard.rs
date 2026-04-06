@@ -61,7 +61,7 @@ pub fn ProfilePage() -> Element {
 
 #[component]
 pub fn ServicesPage() -> Element {
-    let session = use_context::<Signal<SessionState>>();
+    let mut session = use_context::<Signal<SessionState>>();
     let state = session();
 
     if state.token.is_none() {
@@ -69,6 +69,26 @@ pub fn ServicesPage() -> Element {
             LoginRequiredView {}
         };
     }
+
+    let mut has_started = use_signal(|| false);
+
+    use_effect(move || {
+        if has_started() {
+            return;
+        }
+        has_started.set(true);
+
+        let api_base = session.peek().api_base.clone();
+        let token = session.peek().token.clone().unwrap_or_default();
+        spawn(async move {
+            loop {
+                if let Ok(instances) = api::fetch_instances(&api_base, &token).await {
+                    session.write().instances = instances;
+                }
+                TimeoutFuture::new(15000).await;
+            }
+        });
+    });
 
     rsx! {
         DashboardShell { title: "My Services", active_tab: DashboardTab::Services,
@@ -106,6 +126,7 @@ fn instance_status_class(status: &str) -> &'static str {
         "running" => "paid",
         "stopped" => "expired",
         "pending" | "starting" => "pending",
+        "unknown" => "expired",
         _ => "pending",
     }
 }
@@ -127,8 +148,10 @@ pub fn InstanceDetailPage(id: String) -> Element {
 
     let mut instance = use_signal(|| None::<crate::models::InstanceItem>);
     let mut metrics = use_signal(|| None::<crate::models::InstanceMetrics>);
+    let mut nat_mappings = use_signal(|| Vec::<crate::models::NatMappingItem>::new());
     let mut error = use_signal(|| None::<String>);
     let mut action_loading = use_signal(|| false);
+    let mut show_password = use_signal(|| false);
 
     // Initial load
     use_effect({
@@ -144,9 +167,14 @@ pub fn InstanceDetailPage(id: String) -> Element {
                     Ok(data) => instance.set(Some(data)),
                     Err(err) => error.set(Some(err)),
                 }
+                if let Ok(data) = api::fetch_nat_mappings(&api_base, &token, &id).await {
+                    nat_mappings.set(data);
+                }
             });
         }
     });
+
+    let mut metrics_started = use_signal(|| false);
 
     // Periodic metrics update
     use_effect({
@@ -154,15 +182,35 @@ pub fn InstanceDetailPage(id: String) -> Element {
         let api_base = api_base.clone();
         let token = token.clone();
         move || {
+            if metrics_started() {
+                return;
+            }
+            metrics_started.set(true);
+
             let id = id.clone();
             let api_base = api_base.clone();
             let token = token.clone();
             spawn(async move {
                 loop {
                     if let Ok(data) = api::fetch_instance_metrics(&api_base, &token, &id).await {
+                        // Update status from metrics if it's different
+                        let needs_update = if let Some(inst) = instance.peek().as_ref() {
+                            inst.status != data.status
+                        } else {
+                            false
+                        };
+
+                        if needs_update {
+                            let mut inst = {
+                                let guard = instance.peek();
+                                guard.clone().unwrap()
+                            };
+                            inst.status = data.status.clone();
+                            instance.set(Some(inst));
+                        }
                         metrics.set(Some(data));
                     }
-                    TimeoutFuture::new(5000).await;
+                    TimeoutFuture::new(15000).await;
                 }
             });
         }
@@ -179,7 +227,17 @@ pub fn InstanceDetailPage(id: String) -> Element {
             spawn(async move {
                 action_loading.set(true);
                 match api::perform_instance_action(&api_base, &token, &id, action).await {
-                    Ok(_) => {
+                    Ok(resp) => {
+                        if let Some(pwd) = resp.new_password {
+                            // If it's a password reset, update the state immediately and show it
+                            let inst_opt = instance.peek().clone();
+                            if let Some(mut inst) = inst_opt {
+                                inst.root_password = Some(pwd);
+                                instance.set(Some(inst));
+                                show_password.set(true);
+                            }
+                        }
+
                         // Refresh details after a short delay
                         TimeoutFuture::new(1000).await;
                         if let Ok(data) = api::fetch_instance_details(&api_base, &token, &id).await
@@ -200,6 +258,48 @@ pub fn InstanceDetailPage(id: String) -> Element {
             navigator.push(Route::ConsolePage { id: id.clone() });
         }
     };
+
+    let _on_add_nat_mapping = use_callback({
+        let id = id.clone();
+        let api_base = api_base.clone();
+        let token = token.clone();
+        move |payload: crate::models::CreateNatMappingRequest| {
+            let id = id.clone();
+            let api_base = api_base.clone();
+            let token = token.clone();
+            spawn(async move {
+                match api::create_nat_mapping(&api_base, &token, &id, &payload).await {
+                    Ok(new_mapping) => {
+                        let mut current = nat_mappings.peek().clone();
+                        current.insert(0, new_mapping);
+                        nat_mappings.set(current);
+                    }
+                    Err(err) => error.set(Some(err)),
+                }
+            });
+        }
+    });
+
+    let on_remove_nat_mapping = use_callback({
+        let id = id.clone();
+        let api_base = api_base.clone();
+        let token = token.clone();
+        move |mapping_id: String| {
+            let id = id.clone();
+            let api_base = api_base.clone();
+            let token = token.clone();
+            spawn(async move {
+                match api::remove_nat_mapping(&api_base, &token, &id, &mapping_id).await {
+                    Ok(_) => {
+                        let mut current = nat_mappings.peek().clone();
+                        current.retain(|m| m.id != mapping_id);
+                        nat_mappings.set(current);
+                    }
+                    Err(err) => error.set(Some(err)),
+                }
+            });
+        }
+    });
 
     let Some(inst) = instance() else {
         return rsx! {
@@ -251,6 +351,21 @@ pub fn InstanceDetailPage(id: String) -> Element {
                             span { class: "fact", "{inst.os_template}" }
                         }
                         div { class: "detail-item",
+                            span { class: "muted", "Root Password" }
+                            div { class: "password-field",
+                                if show_password() {
+                                    span { class: "fact mono", "{inst.root_password.as_deref().unwrap_or(\"********\")}" }
+                                } else {
+                                    span { class: "fact mono", "********" }
+                                }
+                                button {
+                                    class: "btn-icon",
+                                    onclick: move |_| show_password.set(!show_password()),
+                                    if show_password() { "Hide" } else { "Show" }
+                                }
+                            }
+                        }
+                        div { class: "detail-item",
                             span { class: "muted", "Created At" }
                             span { class: "fact", "{inst.created_at}" }
                         }
@@ -285,41 +400,169 @@ pub fn InstanceDetailPage(id: String) -> Element {
             }
 
             section { class: "panel",
-                h4 { "Actions" }
+                h4 { "NAT Port Mappings" }
+                p { class: "muted small", 
+                    if let (Some(ip), Some(range)) = (inst.nat_ip.as_deref(), inst.nat_port_range.as_deref()) {
+                        "Public NAT IP: {ip} | Port Range: {range}"
+                    } else {
+                        "Public NAT IP: (Pending Allocation)"
+                    }
+                }
+                div { class: "nat-mappings-container",
+                    table {
+                        thead {
+                            tr {
+                                th { "Internal Port" }
+                                th { "External Port" }
+                                th { "Protocol" }
+                                th { "Action" }
+                            }
+                        }
+                        tbody {
+                            if nat_mappings().is_empty() {
+                                tr {
+                                    td { colspan: "4", "No port mappings yet" }
+                                }
+                            } else {
+                                for mapping in nat_mappings() {
+                                    tr {
+                                        td { "{mapping.internal_port}" }
+                                        td { "{mapping.external_port}" }
+                                        td { "{mapping.protocol.to_uppercase()}" }
+                                        td {
+                                            button {
+                                                class: "btn-secondary btn-sm",
+                                                onclick: {
+                                                    let mid = mapping.id.clone();
+                                                    move |_| on_remove_nat_mapping(mid.clone())
+                                                },
+                                                "Delete"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    div { class: "add-mapping-form",
+                        h5 { "Add New Mapping" }
+                        div { class: "form-row",
+                            input {
+                                r#type: "number",
+                                placeholder: "Internal Port",
+                                id: "internal_port",
+                                oninput: move |_e| {
+                                    // We'll use a signal for the form state or just use JS to get values on click
+                                }
+                            }
+                            input {
+                                r#type: "number",
+                                placeholder: "External Port",
+                                id: "external_port"
+                            }
+                            select {
+                                id: "protocol",
+                                option { value: "tcp", "TCP" }
+                                option { value: "udp", "UDP" }
+                            }
+                            button {
+                                class: "btn-primary",
+                                onclick: move |_| {
+                                    #[cfg(target_arch = "wasm32")]
+                                    {
+                                        use wasm_bindgen::JsCast;
+                                        use web_sys::HtmlInputElement;
+                                        use web_sys::HtmlSelectElement;
+                                        let window = web_sys::window().unwrap();
+                                        let document = window.document().unwrap();
+                                        let i_port = document.get_element_by_id("internal_port").unwrap().dyn_into::<HtmlInputElement>().unwrap().value().parse::<i32>().unwrap_or(0);
+                                        let e_port = document.get_element_by_id("external_port").unwrap().dyn_into::<HtmlInputElement>().unwrap().value().parse::<i32>().unwrap_or(0);
+                                        let proto = document.get_element_by_id("protocol").unwrap().dyn_into::<HtmlSelectElement>().unwrap().value();
+                                        if i_port > 0 && e_port > 0 {
+                                            _on_add_nat_mapping(crate::models::CreateNatMappingRequest {
+                                                internal_port: i_port,
+                                                external_port: e_port,
+                                                protocol: proto,
+                                            });
+                                        }
+                                    }
+                                },
+                                "Add"
+                            }
+                        }
+                    }
+                }
+            }
+
+            section { class: "panel danger-zone",
+                h4 { "Instance Actions" }
                 div { class: "action-bar",
                     button {
                         class: "btn-primary",
                         disabled: action_loading(),
                         onclick: move |_| on_action(crate::models::InstanceAction::Start),
-                        "Start"
+                        if action_loading() {
+                            span { class: "spinner" }
+                            "Processing..."
+                        } else {
+                            "Start"
+                        }
                     }
                     button {
                         class: "btn-secondary",
                         disabled: action_loading(),
                         onclick: move |_| on_action(crate::models::InstanceAction::Stop),
-                        "Stop"
+                        if action_loading() {
+                            span { class: "spinner" }
+                            "Processing..."
+                        } else {
+                            "Stop"
+                        }
                     }
                     button {
                         class: "btn-secondary",
                         disabled: action_loading(),
                         onclick: move |_| on_action(crate::models::InstanceAction::Restart),
-                        "Restart"
+                        if action_loading() {
+                            span { class: "spinner" }
+                            "Processing..."
+                        } else {
+                            "Restart"
+                        }
                     }
                     button {
                         class: "btn-secondary",
                         disabled: action_loading(),
-                        onclick: move |_| on_action(crate::models::InstanceAction::Reinstall {
-                            os_template: None,
-                        }),
-                        "Reinstall"
+                        onclick: move |_| {
+                             if instance.peek().is_some() {
+                                // Simple reload for now, real app would show a confirmation modal
+                                on_action(crate::models::InstanceAction::Reinstall {
+                                    os_template: None,
+                                });
+                             }
+                        },
+                        if action_loading() {
+                            span { class: "spinner" }
+                            "Processing..."
+                        } else {
+                            "Reinstall"
+                        }
                     }
                     button {
                         class: "btn-secondary",
                         disabled: action_loading(),
-                        onclick: move |_| on_action(crate::models::InstanceAction::ResetPassword {
-                            new_password: None,
-                        }),
-                        "Reset Password"
+                        onclick: move |_| {
+                            on_action(crate::models::InstanceAction::ResetPassword {
+                                new_password: None,
+                            });
+                        },
+                        if action_loading() {
+                            span { class: "spinner" }
+                            "Processing..."
+                        } else {
+                            "Reset Password"
+                        }
                     }
                     button { class: "btn-primary", onclick: on_console, "Open Console (VNC)" }
                 }

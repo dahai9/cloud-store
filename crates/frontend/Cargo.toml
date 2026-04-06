@@ -28,5 +28,10 @@ web-sys = { version = "0.3", features = [
     "CloseEvent",
     "ErrorEvent",
     "console",
+    "HtmlInputElement",
+    "HtmlSelectElement",
+    "Document",
+    "Element",
 ] }
+wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"

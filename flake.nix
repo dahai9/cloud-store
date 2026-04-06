@@ -47,7 +47,7 @@
             ngrok
             just
             git
-            chromium
+            websocketd
           ];
 
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [

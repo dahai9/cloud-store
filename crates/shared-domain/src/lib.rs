@@ -69,6 +69,7 @@ pub struct NatPlan {
     pub bandwidth_mbps: i32,
     pub traffic_gb: i32,
     pub monthly_price: Decimal,
+    pub nat_port_limit: i32,
     pub active: bool,
 }
 
@@ -80,6 +81,7 @@ pub enum InstanceStatus {
     Stopped,
     Suspended,
     Deleted,
+    Unknown,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,10 +108,21 @@ pub struct Instance {
     pub order_id: Uuid,
     pub plan_id: Uuid,
     pub provider_instance_id: Option<String>,
+    pub root_password: Option<String>,
     pub status: InstanceStatus,
     pub os_template: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NatMapping {
+    pub id: Uuid,
+    pub instance_id: Uuid,
+    pub internal_port: i32,
+    pub external_port: i32,
+    pub protocol: String,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

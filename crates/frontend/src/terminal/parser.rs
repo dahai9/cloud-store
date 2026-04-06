@@ -30,6 +30,11 @@ impl Perform for Terminal {
             b'\n' => self.grid.new_line(),
             b'\r' => self.grid.carriage_return(),
             b'\x08' => self.grid.backspace(), // Backspace
+            b'\t' => {
+                // Tab stops every 8 columns
+                let next_tab = ((self.grid.cursor_col / 8) + 1) * 8;
+                self.grid.cursor_col = next_tab.min(self.grid.cols.saturating_sub(1));
+            }
             b'\x07' => { /* Bell - ignore for now */ }
             _ => {}
         }
@@ -132,42 +137,46 @@ impl Perform for Terminal {
             }
             'A' => {
                 // Cursor Up
-                let count = params
+                let mut count = params
                     .iter()
                     .next()
                     .and_then(|p| p.get(0))
-                    .cloned()
+                    .copied()
                     .unwrap_or(1);
+                if count == 0 { count = 1; }
                 self.grid.move_cursor(-(count as i32), 0);
             }
             'B' => {
                 // Cursor Down
-                let count = params
+                let mut count = params
                     .iter()
                     .next()
                     .and_then(|p| p.get(0))
-                    .cloned()
+                    .copied()
                     .unwrap_or(1);
+                if count == 0 { count = 1; }
                 self.grid.move_cursor(count as i32, 0);
             }
             'C' => {
                 // Cursor Forward
-                let count = params
+                let mut count = params
                     .iter()
                     .next()
                     .and_then(|p| p.get(0))
-                    .cloned()
+                    .copied()
                     .unwrap_or(1);
+                if count == 0 { count = 1; }
                 self.grid.move_cursor(0, count as i32);
             }
             'D' => {
                 // Cursor Backward
-                let count = params
+                let mut count = params
                     .iter()
                     .next()
                     .and_then(|p| p.get(0))
-                    .cloned()
+                    .copied()
                     .unwrap_or(1);
+                if count == 0 { count = 1; }
                 self.grid.move_cursor(0, -(count as i32));
             }
             'H' | 'f' => {
@@ -176,36 +185,38 @@ impl Perform for Terminal {
                 let row = iter
                     .next()
                     .and_then(|p| p.get(0))
-                    .cloned()
-                    .unwrap_or(1)
-                    .saturating_sub(1);
+                    .copied()
+                    .unwrap_or(1);
+                let row = if row == 0 { 1 } else { row }.saturating_sub(1);
+                
                 let col = iter
                     .next()
                     .and_then(|p| p.get(0))
-                    .cloned()
-                    .unwrap_or(1)
-                    .saturating_sub(1);
+                    .copied()
+                    .unwrap_or(1);
+                let col = if col == 0 { 1 } else { col }.saturating_sub(1);
+                
                 self.grid.set_cursor(row as usize, col as usize);
             }
             'G' => {
-                let col = params
+                let mut col = params
                     .iter()
                     .next()
                     .and_then(|p| p.get(0))
                     .copied()
-                    .unwrap_or(1)
-                    .saturating_sub(1);
-                self.grid.set_cursor_col(col as usize);
+                    .unwrap_or(1);
+                if col == 0 { col = 1; }
+                self.grid.set_cursor_col(col.saturating_sub(1) as usize);
             }
             'd' => {
-                let row = params
+                let mut row = params
                     .iter()
                     .next()
                     .and_then(|p| p.get(0))
                     .copied()
-                    .unwrap_or(1)
-                    .saturating_sub(1);
-                self.grid.set_cursor_row(row as usize);
+                    .unwrap_or(1);
+                if row == 0 { row = 1; }
+                self.grid.set_cursor_row(row.saturating_sub(1) as usize);
             }
             's' => self.grid.save_cursor(),
             'u' => self.grid.restore_cursor(),
@@ -230,13 +241,58 @@ impl Perform for Terminal {
                 self.grid.erase_in_line(mode);
             }
             'X' => {
-                let count = params
+                let mut count = params
                     .iter()
                     .next()
                     .and_then(|p| p.get(0))
                     .copied()
                     .unwrap_or(1) as usize;
-                self.grid.erase_chars(count.max(1));
+                if count == 0 { count = 1; }
+                self.grid.erase_chars(count);
+            }
+            'P' => {
+                // Delete Character (DCH)
+                let mut count = params
+                    .iter()
+                    .next()
+                    .and_then(|p| p.get(0))
+                    .copied()
+                    .unwrap_or(1) as usize;
+                if count == 0 { count = 1; }
+                self.grid.delete_chars(count);
+            }
+            '@' => {
+                // Insert Character (ICH)
+                let mut count = params
+                    .iter()
+                    .next()
+                    .and_then(|p| p.get(0))
+                    .copied()
+                    .unwrap_or(1) as usize;
+                if count == 0 { count = 1; }
+                self.grid.insert_chars(count);
+            }
+            'M' => {
+                // Delete Line (DL)
+                let mut count = params
+                    .iter()
+                    .next()
+                    .and_then(|p| p.get(0))
+                    .copied()
+                    .unwrap_or(1) as usize;
+                if count == 0 { count = 1; }
+                self.grid.delete_lines(count);
+            }
+            'L' => {
+                // Insert Line (IL)
+                let mut count = params
+                    .iter()
+                    .next()
+                    .and_then(|p| p.get(0))
+                    .copied()
+                    .unwrap_or(1) as usize;
+                if count == 0 { count = 1; }
+                self.grid.insert_lines(count);
             }
             _ => {}
         }

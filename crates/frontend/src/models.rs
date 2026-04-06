@@ -119,7 +119,26 @@ pub struct InstanceItem {
     pub plan_id: String,
     pub status: String,
     pub os_template: String,
+    pub root_password: Option<String>,
     pub created_at: String,
+    pub nat_ip: Option<String>,
+    pub nat_port_range: Option<String>,
+}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq)]
+pub struct NatMappingItem {
+    pub id: String,
+    pub internal_port: i32,
+    pub external_port: i32,
+    pub protocol: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Serialize)]
+pub struct CreateNatMappingRequest {
+    pub internal_port: i32,
+    pub external_port: i32,
+    pub protocol: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -137,8 +156,9 @@ pub struct ActionRequest {
     pub action: InstanceAction,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, PartialEq)]
 pub struct InstanceMetrics {
+    pub status: String,
     pub cpu_usage_percent: f64,
     pub memory_used_mb: f64,
     pub network_tx_bytes: u64,

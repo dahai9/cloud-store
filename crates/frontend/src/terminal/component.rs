@@ -38,6 +38,12 @@ pub fn TerminalView(url: String) -> Element {
 #[cfg(target_arch = "wasm32")]
 #[component]
 pub fn TerminalView(url: String) -> Element {
+    const RESIZE_SYNC_INTERVAL: Duration = Duration::from_millis(250);
+    const TERMINAL_PADDING_X: f32 = 30.0;
+    const TERMINAL_PADDING_Y: f32 = 30.0;
+    const MIN_INNER_WIDTH: f32 = 168.0;
+    const MIN_INNER_HEIGHT: f32 = 128.0;
+
     let mut term = use_signal(|| Terminal::new(24, 80));
     let mut parser = use_signal(|| Parser::new());
     let ws_tx = use_hook(|| Rc::new(RefCell::new(None::<UnboundedSender<Message>>)));
@@ -46,7 +52,7 @@ pub fn TerminalView(url: String) -> Element {
     let mut backend_ready = use_signal(|| false);
     let mut retry_count = use_signal(|| 0);
     let mut loading_tick = use_signal(|| 0usize);
-    let mut last_term_size = use_signal(|| (24usize, 80usize));
+    let mut ctrl_active = use_signal(|| false);
 
     let ws_tx_for_connection = ws_tx.clone();
 
@@ -138,58 +144,114 @@ pub fn TerminalView(url: String) -> Element {
         }
     });
 
+    let ws_tx_for_resize = ws_tx.clone();
+
     let _resize_sync = use_future(move || {
+        let ws_tx = ws_tx_for_resize.clone();
         let _ = (backend_ready(), error(), retry_count());
 
         async move {
+            let mut last_term_size = (0usize, 0usize);
+            let mut last_viewport_size: Option<(i32, i32)> = None;
+
             loop {
-                sleep(Duration::from_millis(250)).await;
-
-                if !backend_ready() || error().is_some() {
-                    continue;
+                // Reset last_term_size if backend just became ready to force an initial sync
+                if !backend_ready() {
+                    last_term_size = (0, 0);
+                    last_viewport_size = None;
                 }
 
-                let Some(win) = web_sys::window() else {
-                    continue;
-                };
-                let Some(doc) = win.document() else {
-                    continue;
-                };
-                let Some(el) = doc.get_element_by_id("terminal-viewport") else {
-                    continue;
-                };
-                let Ok(html) = el.dyn_into::<web_sys::HtmlElement>() else {
-                    continue;
-                };
+                if backend_ready() && error().is_none() {
+                    let Some(win) = web_sys::window() else {
+                        sleep(RESIZE_SYNC_INTERVAL).await;
+                        continue;
+                    };
 
-                let width = html.client_width();
-                let height = html.client_height();
-                if width <= 0 || height <= 0 {
-                    continue;
+                    let Some(doc) = win.document() else {
+                        sleep(RESIZE_SYNC_INTERVAL).await;
+                        continue;
+                    };
+                    let Some(el) = doc.get_element_by_id("terminal-viewport") else {
+                        sleep(RESIZE_SYNC_INTERVAL).await;
+                        continue;
+                    };
+                    let Ok(html) = el.dyn_into::<web_sys::HtmlElement>() else {
+                        sleep(RESIZE_SYNC_INTERVAL).await;
+                        continue;
+                    };
+
+                    let viewport_size = (html.client_width(), html.client_height());
+                    if viewport_size.0 <= 0 || viewport_size.1 <= 0 {
+                        sleep(RESIZE_SYNC_INTERVAL).await;
+                        continue;
+                    }
+
+                    let initial_sync_needed = last_term_size == (0, 0);
+                    let viewport_changed = last_viewport_size != Some(viewport_size);
+
+                    if !initial_sync_needed && !viewport_changed {
+                        sleep(RESIZE_SYNC_INTERVAL).await;
+                        continue;
+                    }
+
+                    last_viewport_size = Some(viewport_size);
+
+                    // Use layout box size instead of content-derived width to avoid
+                    // feedback loops where terminal content growth keeps expanding cols.
+                    let rect = html.get_bounding_client_rect();
+                    let inner_width =
+                        (rect.width() as f32 - TERMINAL_PADDING_X).max(MIN_INNER_WIDTH);
+                    let inner_height =
+                        (rect.height() as f32 - TERMINAL_PADDING_Y).max(MIN_INNER_HEIGHT);
+
+                    if inner_width <= 0.0 || inner_height <= 0.0 {
+                        sleep(RESIZE_SYNC_INTERVAL).await;
+                        continue;
+                    }
+
+                    // For 14px monospace, chars are roughly 8.4px wide and 16px high.
+                    // Using 8.5 provides a slight safety margin to prevent right-edge clipping.
+                    let cols = (inner_width / 8.5).floor().max(20.0) as usize;
+                    let rows = (inner_height / 16.0).floor().max(8.0) as usize;
+                    let next_size = (rows, cols);
+
+                    if last_term_size != next_size {
+                        let mut t = term.write();
+                        t.resize(rows, cols);
+                        last_term_size = next_size;
+
+                        if let Some(tx) = ws_tx.borrow().as_ref().cloned() {
+                            let resize_message = serde_json::json!({
+                                "kind": "resize",
+                                "rows": rows,
+                                "cols": cols,
+                            })
+                            .to_string();
+
+                            let _ = tx.unbounded_send(Message::Text(resize_message));
+                        }
+                    }
                 }
 
-                let cols = ((width as f32) / 8.4).floor().max(20.0) as usize;
-                let rows = ((height as f32) / 16.0).floor().max(8.0) as usize;
-                let next_size = (rows, cols);
-
-                if last_term_size() != next_size {
-                    let mut t = term.write();
-                    t.resize(rows, cols);
-                    last_term_size.set(next_size);
-                }
+                sleep(RESIZE_SYNC_INTERVAL).await;
             }
         }
     });
 
     let ws_tx_for_input = ws_tx.clone();
-    let on_keydown = move |evt: KeyboardEvent| {
+    let mut on_keydown = move |evt: KeyboardEvent| {
         if let Some(tx) = ws_tx_for_input.borrow().as_ref().cloned() {
             let key_str = evt.key().to_string();
             let ctrl = evt
                 .data()
                 .downcast::<web_sys::KeyboardEvent>()
                 .map(|e| e.ctrl_key() || e.meta_key())
-                .unwrap_or(false);
+                .unwrap_or(false)
+                || ctrl_active();
+
+            if ctrl_active() {
+                ctrl_active.set(false);
+            }
 
             // Map terminal input to raw bytes so control combinations (e.g. Ctrl+C = 0x03)
             // are delivered to the shell correctly.
@@ -246,8 +308,35 @@ pub fn TerminalView(url: String) -> Element {
         connection.restart();
     };
 
+    let ws_tx_for_toolbar = ws_tx.clone();
+    let send_raw = std::rc::Rc::new(move |bytes: Vec<u8>| {
+        if let Some(tx) = ws_tx_for_toolbar.borrow().as_ref().cloned() {
+            let _ = tx.unbounded_send(Message::Bytes(bytes));
+        }
+        // Return focus to terminal after clicking a button
+        if let Some(win) = web_sys::window() {
+            if let Some(doc) = win.document() {
+                if let Some(el) = doc.get_element_by_id("terminal-viewport") {
+                    if let Ok(html) = el.dyn_into::<web_sys::HtmlElement>() {
+                        let _ = html.focus();
+                    }
+                }
+            }
+        }
+    });
+
+    let sr_esc = send_raw.clone();
+    let sr_tab = send_raw.clone();
+    let sr_up = send_raw.clone();
+    let sr_down = send_raw.clone();
+    let sr_left = send_raw.clone();
+    let sr_right = send_raw.clone();
+    let sr_pipe = send_raw.clone();
+    let sr_dash = send_raw.clone();
+    let sr_slash = send_raw.clone();
+
     rsx! {
-        div { style: "width: 100%; min-height: 600px; position: relative;",
+        div { style: "width: 100%; min-height: 600px; display: flex; flex-direction: column; position: relative; background: #000000; border-radius: 8px; border: 1px solid #333; overflow: hidden;",
 
             if let Some(err) = error() {
                 div {
@@ -284,41 +373,128 @@ pub fn TerminalView(url: String) -> Element {
                 }
             } else {
                 div {
-                    class: "terminal-container-rust",
-                    id: "terminal-viewport",
-                    style: "width: 100%; height: 600px; background: #1a1a1a; padding: 15px; border-radius: 8px; border: 1px solid #333; font-family: \"DejaVu Sans Mono\", \"Noto Sans Mono\", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace; font-variant-ligatures: none; font-feature-settings: 'liga' 0; font-size: 14px; line-height: 1; overflow-y: auto; position: relative; color: #ccc; outline: none;",
-                    tabindex: "0",
-                    autofocus: "true",
-                    onkeydown: on_keydown,
-                    onclick: move |evt: MouseEvent| {
-                        if let Some(mouse_evt) = evt.data().downcast::<web_sys::MouseEvent>() {
-                            if let Some(target) = mouse_evt.current_target() {
-                                if let Ok(el) = target.dyn_into::<web_sys::HtmlElement>() {
-                                    let _ = el.focus();
-                                }
-                            }
-                        }
-                    },
-
-                    pre { style: "margin: 0; white-space: pre; line-height: 1; letter-spacing: 0;",
-                        {
-                            term_val
-                                .grid
-                                .lines
-                                .iter()
-                                .enumerate()
-                                .map(|(r_idx, line)| {
-                                    rsx! {
-                                        div {
-                                            key: "{r_idx}",
-                                            style: "height: 1em; display: flex; position: relative; width: max-content;",
-                                            {render_line(line)}
-                                            if r_idx == cursor_row {
-                                                div { style: "position: absolute; width: 1ch; height: 1em; background: rgba(255, 255, 255, 0.6); left: {cursor_col}ch; top: 0; z-index: 1;" }
-                                            }
+                    class: "terminal-mobile-toolbar",
+                    style: "display: flex; gap: 8px; padding: 8px 12px; background: #1a1a1a; border-bottom: 1px solid #333; overflow-x: auto; flex-shrink: 0;",
+                    
+                    button {
+                        class: "terminal-btn",
+                        style: if ctrl_active() {
+                            "padding: 6px 12px; background: #555; color: #fff; border: 1px solid #666; border-radius: 4px; font-family: monospace; font-size: 14px; cursor: pointer; white-space: nowrap; user-select: none;"
+                        } else {
+                            "padding: 6px 12px; background: #333; color: #eee; border: 1px solid #444; border-radius: 4px; font-family: monospace; font-size: 14px; cursor: pointer; white-space: nowrap; user-select: none;"
+                        },
+                        onclick: move |_| {
+                            ctrl_active.set(!ctrl_active());
+                            // Return focus to terminal
+                            if let Some(win) = web_sys::window() {
+                                if let Some(doc) = win.document() {
+                                    if let Some(el) = doc.get_element_by_id("terminal-viewport") {
+                                        if let Ok(html) = el.dyn_into::<web_sys::HtmlElement>() {
+                                            let _ = html.focus();
                                         }
                                     }
-                                })
+                                }
+                            }
+                        },
+                        "Ctrl"
+                    }
+                    button {
+                        class: "terminal-btn",
+                        style: "padding: 6px 12px; background: #333; color: #eee; border: 1px solid #444; border-radius: 4px; font-family: monospace; font-size: 14px; cursor: pointer; white-space: nowrap; user-select: none;",
+                        onclick: move |_| sr_esc(b"\x1b".to_vec()),
+                        "Esc"
+                    }
+                    button {
+                        class: "terminal-btn",
+                        style: "padding: 6px 12px; background: #333; color: #eee; border: 1px solid #444; border-radius: 4px; font-family: monospace; font-size: 14px; cursor: pointer; white-space: nowrap; user-select: none;",
+                        onclick: move |_| sr_tab(b"\t".to_vec()),
+                        "Tab"
+                    }
+                    button {
+                        class: "terminal-btn",
+                        style: "padding: 6px 12px; background: #333; color: #eee; border: 1px solid #444; border-radius: 4px; font-family: monospace; font-size: 14px; cursor: pointer; white-space: nowrap; user-select: none;",
+                        onclick: move |_| sr_up(b"\x1b[A".to_vec()),
+                        "↑"
+                    }
+                    button {
+                        class: "terminal-btn",
+                        style: "padding: 6px 12px; background: #333; color: #eee; border: 1px solid #444; border-radius: 4px; font-family: monospace; font-size: 14px; cursor: pointer; white-space: nowrap; user-select: none;",
+                        onclick: move |_| sr_down(b"\x1b[B".to_vec()),
+                        "↓"
+                    }
+                    button {
+                        class: "terminal-btn",
+                        style: "padding: 6px 12px; background: #333; color: #eee; border: 1px solid #444; border-radius: 4px; font-family: monospace; font-size: 14px; cursor: pointer; white-space: nowrap; user-select: none;",
+                        onclick: move |_| sr_left(b"\x1b[D".to_vec()),
+                        "←"
+                    }
+                    button {
+                        class: "terminal-btn",
+                        style: "padding: 6px 12px; background: #333; color: #eee; border: 1px solid #444; border-radius: 4px; font-family: monospace; font-size: 14px; cursor: pointer; white-space: nowrap; user-select: none;",
+                        onclick: move |_| sr_right(b"\x1b[C".to_vec()),
+                        "→"
+                    }
+                    button {
+                        class: "terminal-btn",
+                        style: "padding: 6px 12px; background: #333; color: #eee; border: 1px solid #444; border-radius: 4px; font-family: monospace; font-size: 14px; cursor: pointer; white-space: nowrap; user-select: none;",
+                        onclick: move |_| sr_pipe(b"|".to_vec()),
+                        "|"
+                    }
+                    button {
+                        class: "terminal-btn",
+                        style: "padding: 6px 12px; background: #333; color: #eee; border: 1px solid #444; border-radius: 4px; font-family: monospace; font-size: 14px; cursor: pointer; white-space: nowrap; user-select: none;",
+                        onclick: move |_| sr_dash(b"-".to_vec()),
+                        "-"
+                    }
+                    button {
+                        class: "terminal-btn",
+                        style: "padding: 6px 12px; background: #333; color: #eee; border: 1px solid #444; border-radius: 4px; font-family: monospace; font-size: 14px; cursor: pointer; white-space: nowrap; user-select: none;",
+                        onclick: move |_| sr_slash(b"/".to_vec()),
+                        "/"
+                    }
+                }
+                div {
+                    class: "terminal-wrapper-inner",
+                    style: "position: relative; width: 100%; flex: 1; min-width: 0; overflow: hidden; background: #000000;",
+                    div {
+                        class: "terminal-container-rust",
+                        id: "terminal-viewport",
+                        style: "position: absolute; inset: 0; box-sizing: border-box; padding: 15px; font-family: \"DejaVu Sans Mono\", \"Noto Sans Mono\", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace; font-variant-ligatures: none; font-feature-settings: 'liga' 0; font-size: 14px; line-height: 1; overflow: hidden; color: #ccc; outline: none; display: flex; flex-direction: column;",
+
+                        tabindex: "0",
+                        autofocus: "true",
+                        onkeydown: on_keydown,
+                        onclick: move |evt: MouseEvent| {
+                            if let Some(mouse_evt) = evt.data().downcast::<web_sys::MouseEvent>() {
+                                if let Some(target) = mouse_evt.current_target() {
+                                    if let Ok(el) = target.dyn_into::<web_sys::HtmlElement>() {
+                                        let _ = el.focus();
+                                    }
+                                }
+                            }
+                        },
+
+                        pre { style: "margin: 0; width: 100%; min-width: 0; max-width: 100%; white-space: pre; line-height: 1; letter-spacing: 0; flex: 1; overflow: hidden;",
+                            {
+                                term_val
+                                    .grid
+                                    .lines
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(r_idx, line)| {
+                                        rsx! {
+                                            div {
+                                                key: "{r_idx}",
+                                                style: "height: 1em; display: block; position: relative; width: 100%; overflow: hidden; white-space: pre; word-wrap: normal; word-break: keep-all; flex-shrink: 0;",
+                                                {render_line(line)}
+                                                if r_idx == cursor_row {
+                                                    div { style: "position: absolute; width: 1ch; height: 1em; background: rgba(255, 255, 255, 0.6); left: {cursor_col}ch; top: 0; z-index: 1;" }
+                                                }
+                                            }
+                                        }
+
+                                    })
+                            }
                         }
                     }
                 }
@@ -330,56 +506,36 @@ pub fn TerminalView(url: String) -> Element {
 #[cfg(target_arch = "wasm32")]
 fn render_line(line: &[Cell]) -> Element {
     if line.is_empty() {
-        return rsx! {
-            span { "" }
-        };
-    }
-
-    let mut spans = Vec::new();
-    let mut current_text = String::new();
-    let mut current_attrs = line[0].attrs;
-
-    for cell in line {
-        if cell.attrs != current_attrs {
-            if !current_text.is_empty() {
-                spans.push((current_text.clone(), current_attrs));
-                current_text.clear();
-            }
-            current_attrs = cell.attrs;
-        }
-        current_text.push(cell.c);
-    }
-    if !current_text.is_empty() {
-        spans.push((current_text, current_attrs));
+        return rsx! { span { "" } };
     }
 
     rsx! {
         {
-            spans
-                .into_iter()
-                .enumerate()
-                .map(|(idx, (text, attrs))| {
-                    let mut style = String::new();
-                    if attrs.bold {
-                        style.push_str("font-weight: bold; ");
-                    }
-                    if attrs.italic {
-                        style.push_str("font-style: italic; ");
-                    }
-                    if attrs.underline {
-                        style.push_str("text-decoration: underline; ");
-                    }
-                    style.push_str(&format!("color: {}; ", color_to_css(attrs.fg)));
-                    if attrs.bg != crate::terminal::cell::Color::Default {
-                        style
-                            .push_str(
-                                &format!("background-color: {}; ", color_to_css(attrs.bg)),
-                            );
-                    }
-                    rsx! {
-                        span { key: "{idx}", style: "{style}", "{text}" }
-                    }
-                })
+            line.iter().enumerate().map(|(idx, cell)| {
+                let mut style = String::from("display: inline-block; width: 1ch; height: 1em; line-height: 1; text-align: center; ");
+                
+                if cell.attrs.bold {
+                    style.push_str("font-weight: bold; ");
+                }
+                if cell.attrs.italic {
+                    style.push_str("font-style: italic; ");
+                }
+                if cell.attrs.underline {
+                    style.push_str("text-decoration: underline; ");
+                }
+                style.push_str(&format!("color: {}; ", color_to_css(cell.attrs.fg)));
+                if cell.attrs.bg != crate::terminal::cell::Color::Default {
+                    style.push_str(&format!("background-color: {}; ", color_to_css(cell.attrs.bg)));
+                }
+
+                // Use non-breaking space for empty cells to ensure they take up space in some browsers
+                // though inline-block with width: 1ch usually handles normal spaces fine.
+                let text = if cell.c == ' ' { "\u{00A0}".to_string() } else { cell.c.to_string() };
+
+                rsx! {
+                    span { key: "{idx}", style: "{style}", "{text}" }
+                }
+            })
         }
     }
 }

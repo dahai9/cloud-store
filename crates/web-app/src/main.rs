@@ -204,6 +204,18 @@ fn build_guest_router(app_state: AppState) -> Router {
         .route("/api/instances", get(instances::list_instances))
         .route("/api/instances/{id}", get(instances::get_instance))
         .route(
+            "/api/instances/{id}/nat-mappings",
+            get(instances::list_nat_mappings),
+        )
+        .route(
+            "/api/instances/{id}/nat-mappings",
+            post(instances::add_nat_mapping),
+        )
+        .route(
+            "/api/instances/{id}/nat-mappings/{mapping_id}",
+            delete(instances::remove_nat_mapping),
+        )
+        .route(
             "/api/instances/{id}/action",
             post(instances::perform_action),
         )

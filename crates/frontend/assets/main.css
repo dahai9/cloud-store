@@ -508,6 +508,7 @@ body::before {
 
 .content {
   padding: 22px;
+  min-width: 0;
 }
 
 .topbar {
@@ -672,6 +673,10 @@ body::before {
   padding: 14px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(245, 248, 255, 0.88));
   transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
 }
 
 .detail-item:hover {
@@ -682,7 +687,8 @@ body::before {
 
 .detail-item .fact {
   margin-bottom: 0;
-  word-break: break-word;
+  word-break: break-all;
+  text-align: right;
 }
 
 .modal-actions {
@@ -750,6 +756,16 @@ body::before {
   transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
 }
 
+.service-item > div {
+  min-width: 0;
+}
+
+.service-item h4 {
+  margin: 0 0 4px 0;
+  word-break: break-all;
+  white-space: normal;
+}
+
 .service-item:hover {
   transform: translateY(-2px);
   border-color: #d8e3fb;
@@ -766,6 +782,8 @@ body::before {
 .instance-detail-header h3 {
   margin: 0;
   font-size: 22px;
+  word-break: break-all;
+  min-width: 0;
 }
 
 .detail-list {
@@ -1377,4 +1395,88 @@ select:focus-visible {
     gap: 10px;
     margin-top: 12px;
   }
+}
+
+/* Instance Detail Page Improvements */
+.password-field {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.password-field .mono {
+    font-family: monospace;
+    background: #f4f4f4;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+}
+
+.btn-icon {
+    padding: 2px 8px;
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+
+.nat-mappings-container {
+    margin-top: 1rem;
+}
+
+.nat-mappings-container table {
+    width: 100%;
+    margin-bottom: 1.5rem;
+}
+
+.add-mapping-form {
+    border-top: 1px solid #eee;
+    padding-top: 1rem;
+}
+
+.add-mapping-form .form-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.add-mapping-form input, .add-mapping-form select {
+    padding: 0.4rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+.danger-zone {
+    border: 1px solid #fee2e2;
+    background-color: #fef2f2;
+}
+
+.btn-sm {
+    padding: 2px 8px;
+    font-size: 0.85rem;
+}
+
+/* Loading Spinner */
+.spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255,255,255,.3);
+    border-radius: 50%;
+    border-top-color: #fff;
+    animation: spin 1s ease-in-out infinite;
+    margin-right: 8px;
+    vertical-align: middle;
+}
+
+.btn-secondary .spinner {
+    border: 2px solid rgba(31, 87, 204, .3);
+    border-top-color: #1f57cc;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+button:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
 }

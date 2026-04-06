@@ -1467,6 +1467,7 @@ dependencies = [
  "serde",
  "serde_json",
  "vte",
+ "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
 ]
@@ -2814,6 +2815,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite 0.26.2",
  "tracing",
+ "tracing-subscriber",
  "uuid",
 ]
 
@@ -4622,6 +4624,7 @@ dependencies = [
  "futures-util",
  "hmac",
  "provider-adapter",
+ "rand 0.8.5",
  "reqwest",
  "rust_decimal",
  "serde",

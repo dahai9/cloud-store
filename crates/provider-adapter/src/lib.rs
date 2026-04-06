@@ -47,6 +47,7 @@ pub struct PortBindingRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstanceMetrics {
+    pub status: String,
     pub cpu_usage_percent: f64,
     pub memory_used_mb: f64,
     pub network_tx_bytes: u64,
@@ -97,6 +98,22 @@ pub trait ComputeProvider: Send + Sync {
         node: &NodeConnection,
         req: PortBindingRequest,
     ) -> anyhow::Result<()>;
+    async fn add_nat_mapping(
+        &self,
+        node: &NodeConnection,
+        instance_id: &str,
+        public_ip: &str,
+        internal_port: i32,
+        external_port: i32,
+        protocol: &str,
+    ) -> anyhow::Result<()>;
+    async fn remove_nat_mapping(
+        &self,
+        node: &NodeConnection,
+        instance_id: &str,
+        external_port: i32,
+        protocol: &str,
+    ) -> anyhow::Result<()>;
     async fn suspend_instance(
         &self,
         node: &NodeConnection,
@@ -135,7 +152,18 @@ pub trait ComputeProvider: Send + Sync {
         node: &NodeConnection,
         instance_id: &str,
     ) -> anyhow::Result<InstanceMetrics>;
+    async fn get_status(
+        &self,
+        node: &NodeConnection,
+        instance_id: &str,
+    ) -> anyhow::Result<String>;
     async fn get_console_token(
+        &self,
+        node: &NodeConnection,
+        instance_id: &str,
+    ) -> anyhow::Result<ConsoleToken>;
+
+    async fn get_exec_token(
         &self,
         node: &NodeConnection,
         instance_id: &str,
@@ -693,16 +721,38 @@ impl ComputeProvider for IncusProvider {
             .await?;
         let body: serde_json::Value = res.json().await?;
 
+        let status = body["metadata"]["status"].as_str().unwrap_or("unknown").to_lowercase();
         let cpu_usage = body["metadata"]["cpu"]["usage"].as_f64().unwrap_or(0.0) / 1_000_000_000.0;
         let mem_usage =
             body["metadata"]["memory"]["usage"].as_f64().unwrap_or(0.0) / 1024.0 / 1024.0;
 
         Ok(InstanceMetrics {
+            status,
             cpu_usage_percent: cpu_usage,
             memory_used_mb: mem_usage,
             network_tx_bytes: 0,
             network_rx_bytes: 0,
         })
+    }
+
+    async fn get_status(
+        &self,
+        node: &NodeConnection,
+        instance_id: &str,
+    ) -> anyhow::Result<String> {
+        self.ensure_trusted(node).await?;
+        let client = self.get_client().await?;
+
+        let res = client
+            .get(format!(
+                "{}/1.0/instances/{}",
+                node.endpoint, instance_id
+            ))
+            .send()
+            .await?;
+        let body: serde_json::Value = res.json().await?;
+        let status = body["metadata"]["status"].as_str().unwrap_or("unknown").to_lowercase();
+        Ok(status)
     }
 
     async fn get_console_token(
@@ -727,12 +777,98 @@ impl ComputeProvider for IncusProvider {
         Self::parse_console_token(&node.endpoint, &body)
     }
 
+    async fn get_exec_token(
+        &self,
+        node: &NodeConnection,
+        instance_id: &str,
+    ) -> anyhow::Result<ConsoleToken> {
+        self.ensure_trusted(node).await?;
+        let client = self.get_client().await?;
+
+        let res = client
+            .post(format!("{}/1.0/instances/{}/exec", node.endpoint, instance_id))
+            .json(&serde_json::json!({
+                "command": ["/bin/bash", "--login"],
+                "environment": {
+                    "TERM": "xterm-256color",
+                    "LANG": "en_US.UTF-8",
+                },
+                "interactive": true,
+                "wait-for-websocket": true,
+            }))
+            .send()
+            .await?;
+
+        let body: serde_json::Value = res.json().await?;
+        info!(response = ?body, "incus exec response");
+        Self::parse_console_token(&node.endpoint, &body)
+    }
+
     async fn attach_nat_ports(
         &self,
         _node: &NodeConnection,
         _req: PortBindingRequest,
     ) -> anyhow::Result<()> {
         Ok(())
+    }
+
+    async fn add_nat_mapping(
+        &self,
+        node: &NodeConnection,
+        instance_id: &str,
+        public_ip: &str,
+        internal_port: i32,
+        external_port: i32,
+        protocol: &str,
+    ) -> anyhow::Result<()> {
+        self.ensure_trusted(node).await?;
+        let client = self.get_client().await?;
+
+        let device_name = format!("nat-{}-{}", protocol, external_port);
+        let device_config = serde_json::json!({
+            "type": "proxy",
+            "listen": format!("{}:{}:{}", protocol, public_ip, external_port),
+            "connect": format!("{}:127.0.0.1:{}", protocol, internal_port),
+            "nat": "true"
+        });
+
+        let patch_req = serde_json::json!({
+            "devices": {
+                device_name: device_config
+            }
+        });
+
+        self.submit_operation_request(
+            &client,
+            client.patch(format!("{}/1.0/instances/{}", node.endpoint, instance_id)).json(&patch_req),
+            &node.endpoint,
+            "add nat mapping device"
+        ).await
+    }
+
+    async fn remove_nat_mapping(
+        &self,
+        node: &NodeConnection,
+        instance_id: &str,
+        external_port: i32,
+        protocol: &str,
+    ) -> anyhow::Result<()> {
+        self.ensure_trusted(node).await?;
+        let client = self.get_client().await?;
+
+        let device_name = format!("nat-{}-{}", protocol, external_port);
+        let patch_req = serde_json::json!({
+            "devices": {
+                device_name: null
+            }
+        });
+
+        self.submit_operation_request(
+            &client,
+            client.patch(format!("{}/1.0/instances/{}", node.endpoint, instance_id)).json(&patch_req),
+            &node.endpoint,
+            "remove nat mapping device"
+        ).await
     }
     async fn suspend_instance(
         &self,
@@ -902,11 +1038,42 @@ impl ComputeProvider for StubProvider {
         _instance_id: &str,
     ) -> anyhow::Result<InstanceMetrics> {
         Ok(InstanceMetrics {
+            status: "running".to_string(),
             cpu_usage_percent: 5.0,
             memory_used_mb: 256.0,
             network_tx_bytes: 1024,
             network_rx_bytes: 2048,
         })
+    }
+
+    async fn get_status(
+        &self,
+        _node: &NodeConnection,
+        _instance_id: &str,
+    ) -> anyhow::Result<String> {
+        Ok("running".to_string())
+    }
+
+    async fn add_nat_mapping(
+        &self,
+        _node: &NodeConnection,
+        _instance_id: &str,
+        _public_ip: &str,
+        _internal_port: i32,
+        _external_port: i32,
+        _protocol: &str,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn remove_nat_mapping(
+        &self,
+        _node: &NodeConnection,
+        _instance_id: &str,
+        _external_port: i32,
+        _protocol: &str,
+    ) -> anyhow::Result<()> {
+        Ok(())
     }
 
     async fn get_console_token(
@@ -916,6 +1083,18 @@ impl ComputeProvider for StubProvider {
     ) -> anyhow::Result<ConsoleToken> {
         Ok(ConsoleToken {
             url: "ws://localhost/stub-console".to_string(),
+            control_url: String::new(),
+            token: "stub-token".to_string(),
+        })
+    }
+
+    async fn get_exec_token(
+        &self,
+        _node: &NodeConnection,
+        _instance_id: &str,
+    ) -> anyhow::Result<ConsoleToken> {
+        Ok(ConsoleToken {
+            url: "ws://localhost/stub-exec".to_string(),
             control_url: String::new(),
             token: "stub-token".to_string(),
         })

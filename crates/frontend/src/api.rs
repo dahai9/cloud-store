@@ -5,6 +5,7 @@ use crate::models::{
 };
 
 use reqwest::Client;
+use serde::{Deserialize, Serialize};
 
 #[cfg(target_arch = "wasm32")]
 const AUTH_TOKEN_KEY: &str = "cloud_store.auth.token";
@@ -403,12 +404,18 @@ pub async fn fetch_instance_details(
         .map_err(|e| format!("failed to parse instance details response: {e}"))
 }
 
+#[derive(Clone, Deserialize, Serialize, PartialEq)]
+pub struct ActionResponse {
+    pub message: String,
+    pub new_password: Option<String>,
+}
+
 pub async fn perform_instance_action(
     api_base: &str,
     token: &str,
     id: &str,
     action: InstanceAction,
-) -> Result<(), String> {
+) -> Result<ActionResponse, String> {
     let client = Client::new();
     let url = format!("{api_base}/api/instances/{id}/action");
     let payload = ActionRequest { action };
@@ -430,7 +437,9 @@ pub async fn perform_instance_action(
         return Err(format!("action failed ({status}): {body}"));
     }
 
-    Ok(())
+    resp.json::<ActionResponse>()
+        .await
+        .map_err(|e| format!("failed to parse action response: {e}"))
 }
 
 pub async fn fetch_instance_metrics(
@@ -448,16 +457,88 @@ pub async fn fetch_instance_metrics(
         .map_err(|e| format!("failed to load metrics: {e}"))?;
 
     if !resp.status().is_success() {
-        return Err(format!(
-            "metrics request failed with status {}",
-            resp.status()
-        ));
+        return Err(format!("metrics request failed with status {}", resp.status()));
     }
 
     resp.json::<InstanceMetrics>()
         .await
         .map_err(|e| format!("failed to parse metrics response: {e}"))
 }
+
+pub async fn fetch_nat_mappings(
+    api_base: &str,
+    token: &str,
+    instance_id: &str,
+) -> Result<Vec<crate::models::NatMappingItem>, String> {
+    let client = Client::new();
+    let url = format!("{api_base}/api/instances/{instance_id}/nat-mappings");
+    let resp = client
+        .get(&url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .send()
+        .await
+        .map_err(|e| format!("failed to load nat mappings: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!(
+            "nat mappings request failed with status {}",
+            resp.status()
+        ));
+    }
+
+    resp.json::<Vec<crate::models::NatMappingItem>>()
+        .await
+        .map_err(|e| format!("failed to parse nat mappings response: {e}"))
+}
+
+pub async fn create_nat_mapping(
+    api_base: &str,
+    token: &str,
+    instance_id: &str,
+    payload: &crate::models::CreateNatMappingRequest,
+) -> Result<crate::models::NatMappingItem, String> {
+    let client = Client::new();
+    let url = format!("{api_base}/api/instances/{instance_id}/nat-mappings");
+    let resp = client
+        .post(&url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .json(payload)
+        .send()
+        .await
+        .map_err(|e| format!("failed to create nat mapping: {e}"))?;
+
+    if !resp.status().is_success() {
+        let err_text = resp.text().await.unwrap_or_default();
+        return Err(format!("create nat mapping failed: {err_text}"));
+    }
+
+    resp.json::<crate::models::NatMappingItem>()
+        .await
+        .map_err(|e| format!("failed to parse created nat mapping: {e}"))
+}
+
+pub async fn remove_nat_mapping(
+    api_base: &str,
+    token: &str,
+    instance_id: &str,
+    mapping_id: &str,
+) -> Result<(), String> {
+    let client = Client::new();
+    let url = format!("{api_base}/api/instances/{instance_id}/nat-mappings/{mapping_id}");
+    let resp = client
+        .delete(&url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .send()
+        .await
+        .map_err(|e| format!("failed to remove nat mapping: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("remove nat mapping failed: {}", resp.status()));
+    }
+
+    Ok(())
+}
+
 
 fn load_persisted_session() -> Option<(String, AuthProfileResponse)> {
     #[cfg(target_arch = "wasm32")]

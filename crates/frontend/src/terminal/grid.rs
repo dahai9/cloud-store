@@ -140,6 +140,68 @@ impl Grid {
         }
     }
 
+    pub fn delete_chars(&mut self, count: usize) {
+        if self.cursor_col >= self.cols {
+            return;
+        }
+        let count = count.min(self.cols - self.cursor_col);
+        let line = &mut self.lines[self.cursor_row];
+        // Shift everything left
+        for col in self.cursor_col..(self.cols - count) {
+            line[col] = line[col + count];
+        }
+        // Fill the rest with default
+        for col in (self.cols - count)..self.cols {
+            line[col] = Cell::default();
+        }
+    }
+
+    pub fn insert_chars(&mut self, count: usize) {
+        if self.cursor_col >= self.cols {
+            return;
+        }
+        let count = count.min(self.cols - self.cursor_col);
+        let line = &mut self.lines[self.cursor_row];
+        // Shift everything right
+        for col in (self.cursor_col..(self.cols - count)).rev() {
+            line[col + count] = line[col];
+        }
+        // Fill the gap with default
+        for col in self.cursor_col..(self.cursor_col + count) {
+            line[col] = Cell::default();
+        }
+    }
+
+    pub fn delete_lines(&mut self, count: usize) {
+        if self.cursor_row >= self.rows {
+            return;
+        }
+        let count = count.min(self.rows - self.cursor_row);
+        for row in self.cursor_row..(self.rows - count) {
+            self.lines.swap(row, row + count);
+        }
+        for row in (self.rows - count)..self.rows {
+            for col in 0..self.cols {
+                self.lines[row][col] = Cell::default();
+            }
+        }
+    }
+
+    pub fn insert_lines(&mut self, count: usize) {
+        if self.cursor_row >= self.rows {
+            return;
+        }
+        let count = count.min(self.rows - self.cursor_row);
+        for row in (self.cursor_row..(self.rows - count)).rev() {
+            self.lines.swap(row, row + count);
+        }
+        for row in self.cursor_row..(self.cursor_row + count) {
+            for col in 0..self.cols {
+                self.lines[row][col] = Cell::default();
+            }
+        }
+    }
+
     pub fn erase_in_display(&mut self, mode: u16) {
         match mode {
             0 => {

@@ -34,10 +34,70 @@ async fn main() -> anyhow::Result<()> {
             error!(error = %e, "failed to run provisioning tick");
         }
 
+        if let Err(e) = sync_instance_statuses(&db, &provider).await {
+            error!(error = %e, "failed to sync instance statuses");
+        }
+
         run_renewal_tick().await;
 
-        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+        tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
     }
+}
+
+async fn sync_instance_statuses(
+    db: &SqlitePool,
+    provider: &IncusProvider,
+) -> anyhow::Result<()> {
+    let rows = sqlx::query(
+        "SELECT i.id, i.provider_instance_id, n.api_endpoint, n.api_token
+         FROM instances i
+         JOIN nodes n ON i.node_id = n.id
+         WHERE i.status != 'deleted' AND i.provider_instance_id IS NOT NULL",
+    )
+    .fetch_all(db)
+    .await?;
+
+    for row in rows {
+        let id: String = row.get("id");
+        let provider_instance_id: String = row.get("provider_instance_id");
+        let api_endpoint: String = row.get::<Option<String>, _>("api_endpoint").unwrap_or_default();
+        let api_token: Option<String> = row.get("api_token");
+
+        if api_endpoint.is_empty() {
+            continue;
+        }
+
+        let node_conn = NodeConnection {
+            endpoint: api_endpoint,
+            token: api_token,
+        };
+
+        match provider.get_metrics(&node_conn, &provider_instance_id).await {
+            Ok(metrics) => {
+                let status = match metrics.status.to_lowercase().as_str() {
+                    "pending" => "pending",
+                    "starting" => "starting",
+                    "running" => "running",
+                    "stopped" => "stopped",
+                    "suspended" => "suspended",
+                    "deleted" => "deleted",
+                    _ => "unknown",
+                };
+
+                sqlx::query("UPDATE instances SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status != ?")
+                    .bind(status)
+                    .bind(&id)
+                    .bind(status)
+                    .execute(db)
+                    .await?;
+            }
+            Err(e) => {
+                warn!(instance_id = %id, error = %e, "failed to fetch live status for sync");
+            }
+        }
+    }
+
+    Ok(())
 }
 
 async fn run_provisioning_tick(
@@ -88,7 +148,7 @@ async fn process_order(
 
     // 2. Fetch Plan details
     let plan_row = sqlx::query(
-        "SELECT id, code, name, memory_mb, storage_gb, cpu_cores, cpu_allowance_pct, bandwidth_mbps, traffic_gb, CAST(monthly_price AS TEXT) AS monthly_price FROM nat_plans WHERE id = ?"
+        "SELECT id, code, name, memory_mb, storage_gb, cpu_cores, cpu_allowance_pct, bandwidth_mbps, traffic_gb, CAST(monthly_price AS TEXT) AS monthly_price, nat_port_limit FROM nat_plans WHERE id = ?"
     )
     .bind(plan_id_str)
     .fetch_one(db)
@@ -106,6 +166,7 @@ async fn process_order(
         traffic_gb: plan_row.get::<i64, _>("traffic_gb") as i32,
         monthly_price: Decimal::from_str(&plan_row.get::<String, _>("monthly_price"))
             .unwrap_or(Decimal::ZERO),
+        nat_port_limit: plan_row.get::<i64, _>("nat_port_limit") as i32,
         active: true,
     };
 
@@ -158,6 +219,12 @@ async fn process_order(
 
     let result = provider.provision_instance(&node_conn, req).await?;
 
+    // Set initial root password
+    let root_password = Uuid::new_v4().to_string().split('-').next().unwrap().to_string() + "!" + &Uuid::new_v4().to_string().split('-').last().unwrap();
+    if let Err(e) = provider.reset_password(&node_conn, &result.instance_id, &root_password).await {
+        error!(error = %e, instance_id = %result.instance_id, "failed to set initial root password");
+    }
+
     // 6. Update DB in a transaction
     let mut tx = db.begin().await?;
 
@@ -189,8 +256,8 @@ async fn process_order(
     // Create Instance record
     let instance_id = Uuid::new_v4().to_string();
     sqlx::query(
-        "INSERT INTO instances (id, user_id, node_id, order_id, plan_id, provider_instance_id, status, os_template)
-         VALUES (?, ?, ?, ?, ?, ?, 'running', ?)"
+        "INSERT INTO instances (id, user_id, node_id, order_id, plan_id, provider_instance_id, status, os_template, root_password)
+         VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?)"
     )
     .bind(&instance_id)
     .bind(user_id_str)
@@ -199,6 +266,7 @@ async fn process_order(
     .bind(plan_id_str)
     .bind(&result.instance_id)
     .bind(&os_template)
+    .bind(&root_password)
     .execute(&mut *tx)
     .await?;
 

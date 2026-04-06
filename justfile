@@ -26,6 +26,13 @@ check-admin-frontend:
 serve-api:
   cargo run -p web-app
 
+serve-worker:
+  cargo run -p worker
+
+serve-backend:
+  # Starts both web-app and worker concurrently
+  (cargo run -p web-app & cargo run -p worker & wait)
+
 serve-frontend:
   cd crates/frontend && dx serve --platform web --port 8080
 
