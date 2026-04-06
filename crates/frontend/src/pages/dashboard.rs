@@ -154,6 +154,7 @@ pub fn InstanceDetailPage(id: String) -> Element {
 
     let mut instance = use_signal(|| None::<crate::models::InstanceItem>);
     let mut metrics = use_signal(|| None::<crate::models::InstanceMetrics>);
+    let mut metrics_history = use_signal(|| Vec::<crate::models::InstanceMetrics>::new());
     let mut nat_mappings = use_signal(Vec::<crate::models::NatMappingItem>::new);
     let mut error = use_signal(|| None::<String>);
     let mut action_loading = use_signal(|| false);
@@ -214,9 +215,17 @@ pub fn InstanceDetailPage(id: String) -> Element {
                             inst.status = data.status.clone();
                             instance.set(Some(inst));
                         }
+
+                        // Push to history
+                        let mut history = metrics_history.peek().clone();
+                        history.push(data.clone());
+                        if history.len() > 30 {
+                            history.remove(0);
+                        }
+                        metrics_history.set(history);
                         metrics.set(Some(data));
                     }
-                    TimeoutFuture::new(15000).await;
+                    TimeoutFuture::new(5000).await;
                 }
             });
         }
@@ -382,21 +391,34 @@ pub fn InstanceDetailPage(id: String) -> Element {
                     h4 { "Real-time Metrics" }
                     if let Some(m) = metrics() {
                         div { class: "metrics-grid",
-                            div { class: "metric-card",
-                                p { class: "muted", "CPU" }
-                                p { class: "fact", "{m.cpu_usage_percent:.1}%" }
+                            MetricCardWithChart {
+                                title: "CPU Usage",
+                                value: format!("{:.1}%", m.cpu_usage_percent),
+                                history: metrics_history().iter().map(|mh| mh.cpu_usage_percent).collect(),
+                                color: "#1f57cc",
+                                max_val: 100.0,
                             }
-                            div { class: "metric-card",
-                                p { class: "muted", "RAM" }
-                                p { class: "fact", "{m.memory_used_mb:.0} MB" }
+                            MetricCardWithChart {
+                                title: "RAM Usage",
+                                value: format!("{:.0} MB", m.memory_used_mb),
+                                history: metrics_history().iter().map(|mh| mh.memory_used_mb).collect(),
+                                color: "#1dbf73",
+                                // Assuming max RAM is not strictly known, we'll let it scale or use a reasonable max
+                                max_val: metrics_history().iter().map(|mh| mh.memory_used_mb).fold(0.0, f64::max).max(512.0),
                             }
-                            div { class: "metric-card",
-                                p { class: "muted", "Net TX" }
-                                p { class: "fact", "{m.network_tx_bytes / 1024} KB" }
+                            MetricCardWithChart {
+                                title: "Net TX",
+                                value: format!("{:.1} KB/s", (m.network_tx_bytes as f64) / 1024.0),
+                                history: metrics_history().iter().map(|mh| mh.network_tx_bytes as f64).collect(),
+                                color: "#ff8b00",
+                                max_val: metrics_history().iter().map(|mh| mh.network_tx_bytes as f64).fold(0.0, f64::max).max(1024.0),
                             }
-                            div { class: "metric-card",
-                                p { class: "muted", "Net RX" }
-                                p { class: "fact", "{m.network_rx_bytes / 1024} KB" }
+                            MetricCardWithChart {
+                                title: "Net RX",
+                                value: format!("{:.1} KB/s", (m.network_rx_bytes as f64) / 1024.0),
+                                history: metrics_history().iter().map(|mh| mh.network_rx_bytes as f64).collect(),
+                                color: "#9333ea",
+                                max_val: metrics_history().iter().map(|mh| mh.network_rx_bytes as f64).fold(0.0, f64::max).max(1024.0),
                             }
                         }
                     } else {
@@ -1134,3 +1156,64 @@ pub fn ConsolePage(id: String) -> Element {
         }
     }
 }
+
+#[component]
+fn MetricCardWithChart(
+    title: String,
+    value: String,
+    history: Vec<f64>,
+    color: &'static str,
+    max_val: f64,
+) -> Element {
+    let width = 120;
+    let height = 40;
+
+    // Create SVG polyline points
+    let points = if history.len() < 2 {
+        "".to_string()
+    } else {
+        let x_step = width as f64 / (history.len() - 1) as f64;
+        history
+            .iter()
+            .enumerate()
+            .map(|(i, &v)| {
+                let x = i as f64 * x_step;
+                let normalized_v = if max_val > 0.0 {
+                    (v / max_val).min(1.0)
+                } else {
+                    0.0
+                };
+                let y = height as f64 - (normalized_v * height as f64);
+                format!("{:.1},{:.1}", x, y)
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+
+    rsx! {
+        div { class: "metric-card-chart",
+            div { class: "metric-info",
+                p { class: "muted small", "{title}" }
+                p { class: "fact", "{value}" }
+            }
+            div { class: "metric-chart-container",
+                svg {
+                    width: "100%",
+                    height: "100%",
+                    view_box: "0 0 {width} {height}",
+                    preserve_aspect_ratio: "none",
+
+                    polyline {
+                        fill: "none",
+                        stroke: "{color}",
+                        stroke_width: "2",
+                        stroke_linecap: "round",
+                        stroke_linejoin: "round",
+                        points: "{points}",
+                    }
+                }
+            }
+        }
+    }
+}
+
