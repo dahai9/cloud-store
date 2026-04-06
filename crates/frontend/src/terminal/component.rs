@@ -3,7 +3,7 @@ use dioxus::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use crate::terminal::cell::Cell;
 #[cfg(target_arch = "wasm32")]
-use crate::terminal::Terminal;
+use crate::terminal::parser::Terminal;
 #[cfg(target_arch = "wasm32")]
 use futures_channel::mpsc::{unbounded, UnboundedSender};
 #[cfg(target_arch = "wasm32")]
@@ -239,7 +239,7 @@ pub fn TerminalView(url: String) -> Element {
     });
 
     let ws_tx_for_input = ws_tx.clone();
-    let mut on_keydown = move |evt: KeyboardEvent| {
+    let on_keydown = move |evt: KeyboardEvent| {
         if let Some(tx) = ws_tx_for_input.borrow().as_ref().cloned() {
             let key_str = evt.key().to_string();
             let ctrl = evt
@@ -375,7 +375,7 @@ pub fn TerminalView(url: String) -> Element {
                 div {
                     class: "terminal-mobile-toolbar",
                     style: "display: flex; gap: 8px; padding: 8px 12px; background: #1a1a1a; border-bottom: 1px solid #333; overflow-x: auto; flex-shrink: 0;",
-                    
+
                     button {
                         class: "terminal-btn",
                         style: if ctrl_active() {
@@ -509,33 +509,80 @@ fn render_line(line: &[Cell]) -> Element {
         return rsx! { span { "" } };
     }
 
+    let mut spans = Vec::new();
+    let mut current_text = String::new();
+    let mut current_attrs = line[0].attrs;
+    let mut current_is_ascii = true;
+
+    for (i, cell) in line.iter().enumerate() {
+        let is_ascii = cell.c.is_ascii();
+
+        if i == 0 {
+            current_is_ascii = is_ascii;
+            current_text.push(cell.c);
+            continue;
+        }
+
+        // Break if attributes change, OR if current is non-ASCII, OR if previous was non-ASCII.
+        // This isolates every non-ASCII character into its own 1-char span to prevent fallback fonts
+        // from breaking the monospace grid alignment.
+        let should_break = cell.attrs != current_attrs || !is_ascii || !current_is_ascii;
+
+        if should_break {
+            if !current_text.is_empty() {
+                spans.push((current_text.clone(), current_attrs));
+                current_text.clear();
+            }
+            current_attrs = cell.attrs;
+            current_is_ascii = is_ascii;
+        }
+        current_text.push(cell.c);
+    }
+    if !current_text.is_empty() {
+        spans.push((current_text, current_attrs));
+    }
+
     rsx! {
         {
-            line.iter().enumerate().map(|(idx, cell)| {
-                let mut style = String::from("display: inline-block; width: 1ch; height: 1em; line-height: 1; text-align: center; ");
-                
-                if cell.attrs.bold {
-                    style.push_str("font-weight: bold; ");
-                }
-                if cell.attrs.italic {
-                    style.push_str("font-style: italic; ");
-                }
-                if cell.attrs.underline {
-                    style.push_str("text-decoration: underline; ");
-                }
-                style.push_str(&format!("color: {}; ", color_to_css(cell.attrs.fg)));
-                if cell.attrs.bg != crate::terminal::cell::Color::Default {
-                    style.push_str(&format!("background-color: {}; ", color_to_css(cell.attrs.bg)));
-                }
+            spans
+                .into_iter()
+                .enumerate()
+                .map(|(idx, (text, attrs))| {
+                    let chars_count = text.chars().count();
+                    // Center non-ASCII characters (like box drawing) so they align visually even if fallback fonts are narrower.
+                    // Left-align standard text.
+                    let align = if chars_count == 1 && !text.chars().next().unwrap().is_ascii() {
+                        "center"
+                    } else {
+                        "left"
+                    };
 
-                // Use non-breaking space for empty cells to ensure they take up space in some browsers
-                // though inline-block with width: 1ch usually handles normal spaces fine.
-                let text = if cell.c == ' ' { "\u{00A0}".to_string() } else { cell.c.to_string() };
+                    let mut style = format!(
+                        "display: inline-block; width: {}ch; text-align: {}; ",
+                        chars_count, align
+                    );
 
-                rsx! {
-                    span { key: "{idx}", style: "{style}", "{text}" }
-                }
-            })
+                    if attrs.bold {
+                        style.push_str("font-weight: bold; ");
+                    }
+                    if attrs.italic {
+                        style.push_str("font-style: italic; ");
+                    }
+                    if attrs.underline {
+                        style.push_str("text-decoration: underline; ");
+                    }
+                    style.push_str(&format!("color: {}; ", color_to_css(attrs.fg)));
+                    if attrs.bg != crate::terminal::cell::Color::Default {
+                        style.push_str(&format!("background-color: {}; ", color_to_css(attrs.bg)));
+                    }
+
+                    // Use non-breaking space for spaces to ensure they take up space in HTML
+                    let display_text = text.replace(' ', "\u{00A0}");
+
+                    rsx! {
+                        span { key: "{idx}", style: "{style}", "{display_text}" }
+                    }
+                })
         }
     }
 }
