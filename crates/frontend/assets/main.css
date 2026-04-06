@@ -1154,6 +1154,20 @@ select:focus-visible {
     gap: 10px;
   }
 
+  .instance-detail-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .instance-detail-header .btn-secondary {
+    white-space: nowrap;
+  }
+
+  .instance-detail-header h3 {
+    font-size: 18px;
+  }
+
   .topbar h2 {
     font-size: 21px;
   }
@@ -1215,6 +1229,15 @@ select:focus-visible {
   .sidebar {
     padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
     border-radius: 14px 14px 0 0;
+  }
+
+  .instance-detail-header {
+    margin-bottom: 14px;
+    gap: 8px;
+  }
+
+  .instance-detail-header h3 {
+    font-size: 15px;
   }
 
   .logo-mark {
