@@ -1,6 +1,7 @@
 use crate::terminal::cell::{Cell, CellAttributes};
 use serde::{Deserialize, Serialize};
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Grid {
     pub rows: usize,
@@ -12,6 +13,7 @@ pub struct Grid {
     pub saved_cursor_col: usize,
 }
 
+#[allow(dead_code)]
 impl Grid {
     pub fn new(rows: usize, cols: usize) -> Self {
         let lines = vec![vec![Cell::default(); cols]; rows];
@@ -151,8 +153,8 @@ impl Grid {
             line[col] = line[col + count];
         }
         // Fill the rest with default
-        for col in (self.cols - count)..self.cols {
-            line[col] = Cell::default();
+        for item in line.iter_mut().skip(self.cols - count) {
+            *item = Cell::default();
         }
     }
 
@@ -167,8 +169,8 @@ impl Grid {
             line[col + count] = line[col];
         }
         // Fill the gap with default
-        for col in self.cursor_col..(self.cursor_col + count) {
-            line[col] = Cell::default();
+        for item in line.iter_mut().skip(self.cursor_col).take(count) {
+            *item = Cell::default();
         }
     }
 
@@ -250,9 +252,7 @@ impl Grid {
         for row_offset in 0..rows_to_copy {
             let old_row = &old_lines[old_start + row_offset];
             let cols_to_copy = old_row.len().min(new_cols);
-            for col in 0..cols_to_copy {
-                new_lines[new_start + row_offset][col] = old_row[col];
-            }
+            new_lines[new_start + row_offset][..cols_to_copy].copy_from_slice(&old_row[..cols_to_copy]);
         }
 
         self.rows = new_rows;

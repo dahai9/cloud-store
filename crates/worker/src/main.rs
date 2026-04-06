@@ -226,7 +226,7 @@ async fn process_order(
         .unwrap()
         .to_string()
         + "!"
-        + &Uuid::new_v4().to_string().split('-').last().unwrap();
+        + Uuid::new_v4().to_string().split('-').next_back().unwrap();
     if let Err(e) = provider
         .reset_password(&node_conn, &result.instance_id, &root_password)
         .await

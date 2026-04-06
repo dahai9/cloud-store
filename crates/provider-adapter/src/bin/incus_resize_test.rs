@@ -20,7 +20,7 @@ async fn main() -> anyhow::Result<()> {
     let mut control_ws = provider.open_console_ws(&token.control_url).await?;
     let mut data_ws = provider.open_console_ws(&token.url).await?;
 
-    let formats = vec![
+    let formats = [
         serde_json::json!({ "command": "window-resize", "args": { "width": "120", "height": "40" } }),
         serde_json::json!({ "command": "window-resize", "args": { "width": 110, "height": 45 } }),
         serde_json::json!({ "command": "window-resize", "width": "130", "height": "50" }),

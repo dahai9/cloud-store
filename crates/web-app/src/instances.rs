@@ -558,27 +558,33 @@ pub async fn perform_action(
     };
 
     let result = match payload.action {
-        InstanceAction::Start => provider
-            .start_instance(&node_conn, &provider_instance_id)
-            .await
-            .map(|_| {
-                let _ = update_status(&state, &id, InstanceStatus::Starting);
-            })
-            .map_err(|e| e.to_string()),
-        InstanceAction::Stop => provider
-            .stop_instance(&node_conn, &provider_instance_id)
-            .await
-            .map(|_| {
-                let _ = update_status(&state, &id, InstanceStatus::Stopped);
-            })
-            .map_err(|e| e.to_string()),
-        InstanceAction::Restart => provider
-            .restart_instance(&node_conn, &provider_instance_id)
-            .await
-            .map(|_| {
-                let _ = update_status(&state, &id, InstanceStatus::Starting);
-            })
-            .map_err(|e| e.to_string()),
+        InstanceAction::Start => {
+            let res = provider
+                .start_instance(&node_conn, &provider_instance_id)
+                .await;
+            if res.is_ok() {
+                let _ = update_status(&state, &id, InstanceStatus::Starting).await;
+            }
+            res.map_err(|e| e.to_string())
+        }
+        InstanceAction::Stop => {
+            let res = provider
+                .stop_instance(&node_conn, &provider_instance_id)
+                .await;
+            if res.is_ok() {
+                let _ = update_status(&state, &id, InstanceStatus::Stopped).await;
+            }
+            res.map_err(|e| e.to_string())
+        }
+        InstanceAction::Restart => {
+            let res = provider
+                .restart_instance(&node_conn, &provider_instance_id)
+                .await;
+            if res.is_ok() {
+                let _ = update_status(&state, &id, InstanceStatus::Starting).await;
+            }
+            res.map_err(|e| e.to_string())
+        }
         InstanceAction::ResetPassword { new_password } => {
             let pwd = new_password.unwrap_or_else(|| generate_strong_password(11));
             let res = provider
@@ -600,13 +606,13 @@ pub async fn perform_action(
         }
         InstanceAction::Reinstall { os_template } => {
             let template = os_template.unwrap_or_else(|| DEFAULT_OS_TEMPLATE.to_string());
-            provider
+            let res = provider
                 .reinstall_instance(&node_conn, &provider_instance_id, &template)
-                .await
-                .map(|_| {
-                    let _ = update_status(&state, &id, InstanceStatus::Pending);
-                })
-                .map_err(|e| e.to_string())
+                .await;
+            if res.is_ok() {
+                let _ = update_status(&state, &id, InstanceStatus::Pending).await;
+            }
+            res.map_err(|e| e.to_string())
         }
     };
 
@@ -995,7 +1001,7 @@ async fn relay_console(
                 match msg {
                     Ok(AxumMessage::Binary(data)) => {
                         browser_msg_count += 1;
-                        if data_send_tx.send(TungMessage::Binary(data.into())).is_err() {
+                        if data_send_tx.send(TungMessage::Binary(data)).is_err() {
                             break;
                         }
                     }
@@ -1039,7 +1045,7 @@ async fn relay_console(
                     }
                     Ok(AxumMessage::Ping(payload)) => {
                         if data_send_tx
-                            .send(TungMessage::Ping(payload.into()))
+                            .send(TungMessage::Ping(payload))
                             .is_err()
                         {
                             break;
@@ -1067,7 +1073,7 @@ async fn relay_console(
                     Ok(TungMessage::Binary(data)) => {
                         incus_msg_count += 1;
                         if browser_sink
-                            .send(AxumMessage::Binary(data.into()))
+                            .send(AxumMessage::Binary(data))
                             .await
                             .is_err()
                         {

@@ -2,11 +2,13 @@ use crate::terminal::cell::{CellAttributes, Color};
 use crate::terminal::grid::Grid;
 use vte::{Params, Perform};
 
+#[allow(dead_code)]
 pub struct Terminal {
     pub grid: Grid,
     pub attrs: CellAttributes,
 }
 
+#[allow(dead_code)]
 impl Terminal {
     pub fn new(rows: usize, cols: usize) -> Self {
         Self {
@@ -140,7 +142,7 @@ impl Perform for Terminal {
                 let mut count = params
                     .iter()
                     .next()
-                    .and_then(|p| p.get(0))
+                    .and_then(|p| p.first())
                     .copied()
                     .unwrap_or(1);
                 if count == 0 {
@@ -153,7 +155,7 @@ impl Perform for Terminal {
                 let mut count = params
                     .iter()
                     .next()
-                    .and_then(|p| p.get(0))
+                    .and_then(|p| p.first())
                     .copied()
                     .unwrap_or(1);
                 if count == 0 {
@@ -166,7 +168,7 @@ impl Perform for Terminal {
                 let mut count = params
                     .iter()
                     .next()
-                    .and_then(|p| p.get(0))
+                    .and_then(|p| p.first())
                     .copied()
                     .unwrap_or(1);
                 if count == 0 {
@@ -179,7 +181,7 @@ impl Perform for Terminal {
                 let mut count = params
                     .iter()
                     .next()
-                    .and_then(|p| p.get(0))
+                    .and_then(|p| p.first())
                     .copied()
                     .unwrap_or(1);
                 if count == 0 {
@@ -190,10 +192,10 @@ impl Perform for Terminal {
             'H' | 'f' => {
                 // Cursor Position
                 let mut iter = params.iter();
-                let row = iter.next().and_then(|p| p.get(0)).copied().unwrap_or(1);
+                let row = iter.next().and_then(|p| p.first()).copied().unwrap_or(1);
                 let row = if row == 0 { 1 } else { row }.saturating_sub(1);
 
-                let col = iter.next().and_then(|p| p.get(0)).copied().unwrap_or(1);
+                let col = iter.next().and_then(|p| p.first()).copied().unwrap_or(1);
                 let col = if col == 0 { 1 } else { col }.saturating_sub(1);
 
                 self.grid.set_cursor(row as usize, col as usize);
@@ -202,7 +204,7 @@ impl Perform for Terminal {
                 let mut col = params
                     .iter()
                     .next()
-                    .and_then(|p| p.get(0))
+                    .and_then(|p| p.first())
                     .copied()
                     .unwrap_or(1);
                 if col == 0 {
@@ -214,7 +216,7 @@ impl Perform for Terminal {
                 let mut row = params
                     .iter()
                     .next()
-                    .and_then(|p| p.get(0))
+                    .and_then(|p| p.first())
                     .copied()
                     .unwrap_or(1);
                 if row == 0 {
@@ -229,7 +231,7 @@ impl Perform for Terminal {
                 let mode = params
                     .iter()
                     .next()
-                    .and_then(|p| p.get(0))
+                    .and_then(|p| p.first())
                     .cloned()
                     .unwrap_or(0);
                 self.grid.erase_in_display(mode);
@@ -239,7 +241,7 @@ impl Perform for Terminal {
                 let mode = params
                     .iter()
                     .next()
-                    .and_then(|p| p.get(0))
+                    .and_then(|p| p.first())
                     .cloned()
                     .unwrap_or(0);
                 self.grid.erase_in_line(mode);
@@ -248,7 +250,7 @@ impl Perform for Terminal {
                 let mut count = params
                     .iter()
                     .next()
-                    .and_then(|p| p.get(0))
+                    .and_then(|p| p.first())
                     .copied()
                     .unwrap_or(1) as usize;
                 if count == 0 {
@@ -261,7 +263,7 @@ impl Perform for Terminal {
                 let mut count = params
                     .iter()
                     .next()
-                    .and_then(|p| p.get(0))
+                    .and_then(|p| p.first())
                     .copied()
                     .unwrap_or(1) as usize;
                 if count == 0 {
@@ -274,7 +276,7 @@ impl Perform for Terminal {
                 let mut count = params
                     .iter()
                     .next()
-                    .and_then(|p| p.get(0))
+                    .and_then(|p| p.first())
                     .copied()
                     .unwrap_or(1) as usize;
                 if count == 0 {
@@ -287,7 +289,7 @@ impl Perform for Terminal {
                 let mut count = params
                     .iter()
                     .next()
-                    .and_then(|p| p.get(0))
+                    .and_then(|p| p.first())
                     .copied()
                     .unwrap_or(1) as usize;
                 if count == 0 {
@@ -300,7 +302,7 @@ impl Perform for Terminal {
                 let mut count = params
                     .iter()
                     .next()
-                    .and_then(|p| p.get(0))
+                    .and_then(|p| p.first())
                     .copied()
                     .unwrap_or(1) as usize;
                 if count == 0 {
