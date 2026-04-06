@@ -822,40 +822,11 @@ impl ComputeProvider for IncusProvider {
         self.ensure_trusted(node).await?;
         let client = self.get_client().await?;
 
-        // 1. Fetch current state to get internal IP
-        let res = client
-            .get(format!(
-                "{}/1.0/instances/{}/state",
-                node.endpoint, instance_id
-            ))
-            .send()
-            .await?;
-        let body: serde_json::Value = res.json().await?;
-
-        // Extract first IPv4 address from any interface except loopback
-        let internal_ip = body["metadata"]["network"]
-            .as_object()
-            .and_then(|networks| {
-                networks.values().find_map(|net| {
-                    net["addresses"].as_array().and_then(|addrs| {
-                        addrs.iter().find_map(|addr| {
-                            if addr["family"] == "inet" && addr["scope"] == "global" {
-                                addr["address"].as_str()
-                            } else {
-                                None
-                            }
-                        })
-                    })
-                })
-            })
-            .ok_or_else(|| anyhow::anyhow!("instance has no global IPv4 address for NAT"))?;
-
         let device_name = format!("nat-{}-{}", protocol, external_port);
         let device_config = serde_json::json!({
             "type": "proxy",
             "listen": format!("{}:{}:{}", protocol, public_ip, external_port),
-            "connect": format!("{}:{}:{}", protocol, internal_ip, internal_port),
-            "nat": "true"
+            "connect": format!("{}:127.0.0.1:{}", protocol, internal_port),
         });
 
         let patch_req = serde_json::json!({
