@@ -143,7 +143,9 @@ impl Perform for Terminal {
                     .and_then(|p| p.get(0))
                     .copied()
                     .unwrap_or(1);
-                if count == 0 { count = 1; }
+                if count == 0 {
+                    count = 1;
+                }
                 self.grid.move_cursor(-(count as i32), 0);
             }
             'B' => {
@@ -154,7 +156,9 @@ impl Perform for Terminal {
                     .and_then(|p| p.get(0))
                     .copied()
                     .unwrap_or(1);
-                if count == 0 { count = 1; }
+                if count == 0 {
+                    count = 1;
+                }
                 self.grid.move_cursor(count as i32, 0);
             }
             'C' => {
@@ -165,7 +169,9 @@ impl Perform for Terminal {
                     .and_then(|p| p.get(0))
                     .copied()
                     .unwrap_or(1);
-                if count == 0 { count = 1; }
+                if count == 0 {
+                    count = 1;
+                }
                 self.grid.move_cursor(0, count as i32);
             }
             'D' => {
@@ -176,26 +182,20 @@ impl Perform for Terminal {
                     .and_then(|p| p.get(0))
                     .copied()
                     .unwrap_or(1);
-                if count == 0 { count = 1; }
+                if count == 0 {
+                    count = 1;
+                }
                 self.grid.move_cursor(0, -(count as i32));
             }
             'H' | 'f' => {
                 // Cursor Position
                 let mut iter = params.iter();
-                let row = iter
-                    .next()
-                    .and_then(|p| p.get(0))
-                    .copied()
-                    .unwrap_or(1);
+                let row = iter.next().and_then(|p| p.get(0)).copied().unwrap_or(1);
                 let row = if row == 0 { 1 } else { row }.saturating_sub(1);
-                
-                let col = iter
-                    .next()
-                    .and_then(|p| p.get(0))
-                    .copied()
-                    .unwrap_or(1);
+
+                let col = iter.next().and_then(|p| p.get(0)).copied().unwrap_or(1);
                 let col = if col == 0 { 1 } else { col }.saturating_sub(1);
-                
+
                 self.grid.set_cursor(row as usize, col as usize);
             }
             'G' => {
@@ -205,7 +205,9 @@ impl Perform for Terminal {
                     .and_then(|p| p.get(0))
                     .copied()
                     .unwrap_or(1);
-                if col == 0 { col = 1; }
+                if col == 0 {
+                    col = 1;
+                }
                 self.grid.set_cursor_col(col.saturating_sub(1) as usize);
             }
             'd' => {
@@ -215,7 +217,9 @@ impl Perform for Terminal {
                     .and_then(|p| p.get(0))
                     .copied()
                     .unwrap_or(1);
-                if row == 0 { row = 1; }
+                if row == 0 {
+                    row = 1;
+                }
                 self.grid.set_cursor_row(row.saturating_sub(1) as usize);
             }
             's' => self.grid.save_cursor(),
@@ -247,7 +251,9 @@ impl Perform for Terminal {
                     .and_then(|p| p.get(0))
                     .copied()
                     .unwrap_or(1) as usize;
-                if count == 0 { count = 1; }
+                if count == 0 {
+                    count = 1;
+                }
                 self.grid.erase_chars(count);
             }
             'P' => {
@@ -258,7 +264,9 @@ impl Perform for Terminal {
                     .and_then(|p| p.get(0))
                     .copied()
                     .unwrap_or(1) as usize;
-                if count == 0 { count = 1; }
+                if count == 0 {
+                    count = 1;
+                }
                 self.grid.delete_chars(count);
             }
             '@' => {
@@ -269,7 +277,9 @@ impl Perform for Terminal {
                     .and_then(|p| p.get(0))
                     .copied()
                     .unwrap_or(1) as usize;
-                if count == 0 { count = 1; }
+                if count == 0 {
+                    count = 1;
+                }
                 self.grid.insert_chars(count);
             }
             'M' => {
@@ -280,7 +290,9 @@ impl Perform for Terminal {
                     .and_then(|p| p.get(0))
                     .copied()
                     .unwrap_or(1) as usize;
-                if count == 0 { count = 1; }
+                if count == 0 {
+                    count = 1;
+                }
                 self.grid.delete_lines(count);
             }
             'L' => {
@@ -291,7 +303,9 @@ impl Perform for Terminal {
                     .and_then(|p| p.get(0))
                     .copied()
                     .unwrap_or(1) as usize;
-                if count == 0 { count = 1; }
+                if count == 0 {
+                    count = 1;
+                }
                 self.grid.insert_lines(count);
             }
             _ => {}

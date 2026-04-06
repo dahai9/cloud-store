@@ -457,7 +457,10 @@ pub async fn fetch_instance_metrics(
         .map_err(|e| format!("failed to load metrics: {e}"))?;
 
     if !resp.status().is_success() {
-        return Err(format!("metrics request failed with status {}", resp.status()));
+        return Err(format!(
+            "metrics request failed with status {}",
+            resp.status()
+        ));
     }
 
     resp.json::<InstanceMetrics>()
@@ -538,7 +541,6 @@ pub async fn remove_nat_mapping(
 
     Ok(())
 }
-
 
 fn load_persisted_session() -> Option<(String, AuthProfileResponse)> {
     #[cfg(target_arch = "wasm32")]

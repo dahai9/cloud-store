@@ -44,10 +44,7 @@ async fn main() -> anyhow::Result<()> {
     }
 }
 
-async fn sync_instance_statuses(
-    db: &SqlitePool,
-    provider: &IncusProvider,
-) -> anyhow::Result<()> {
+async fn sync_instance_statuses(db: &SqlitePool, provider: &IncusProvider) -> anyhow::Result<()> {
     let rows = sqlx::query(
         "SELECT i.id, i.provider_instance_id, n.api_endpoint, n.api_token
          FROM instances i
@@ -60,7 +57,9 @@ async fn sync_instance_statuses(
     for row in rows {
         let id: String = row.get("id");
         let provider_instance_id: String = row.get("provider_instance_id");
-        let api_endpoint: String = row.get::<Option<String>, _>("api_endpoint").unwrap_or_default();
+        let api_endpoint: String = row
+            .get::<Option<String>, _>("api_endpoint")
+            .unwrap_or_default();
         let api_token: Option<String> = row.get("api_token");
 
         if api_endpoint.is_empty() {
@@ -72,7 +71,10 @@ async fn sync_instance_statuses(
             token: api_token,
         };
 
-        match provider.get_metrics(&node_conn, &provider_instance_id).await {
+        match provider
+            .get_metrics(&node_conn, &provider_instance_id)
+            .await
+        {
             Ok(metrics) => {
                 let status = match metrics.status.to_lowercase().as_str() {
                     "pending" => "pending",
@@ -193,19 +195,16 @@ async fn process_order(
         token: node_row.get::<Option<String>, _>("api_token"),
     };
 
-    // 4. Find/Reserve NAT Port Lease
-    let lease_row = sqlx::query(
-        "SELECT id, public_ip, start_port, end_port FROM nat_port_leases
-        WHERE node_id = ? AND (reserved_for_order_id = ? OR reserved = 0)
-         LIMIT 1",
-    )
-    .bind(&node_id_str)
-    .bind(order_id_str)
-    .fetch_optional(db)
-    .await?
-    .ok_or_else(|| anyhow!("no available NAT port leases on the selected node"))?;
+    // 4. Ensure node has NAT capacity (at least one range defined)
+    let has_nat =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM nat_port_leases WHERE node_id = ?")
+            .bind(&node_id_str)
+            .fetch_one(db)
+            .await?;
 
-    let lease_id: String = lease_row.get("id");
+    if has_nat == 0 {
+        anyhow::bail!("selected node has no NAT port pools configured");
+    }
 
     // 5. Call Provider to create LXC container
     let os_template = DEFAULT_OS_TEMPLATE.to_string();
@@ -220,8 +219,18 @@ async fn process_order(
     let result = provider.provision_instance(&node_conn, req).await?;
 
     // Set initial root password
-    let root_password = Uuid::new_v4().to_string().split('-').next().unwrap().to_string() + "!" + &Uuid::new_v4().to_string().split('-').last().unwrap();
-    if let Err(e) = provider.reset_password(&node_conn, &result.instance_id, &root_password).await {
+    let root_password = Uuid::new_v4()
+        .to_string()
+        .split('-')
+        .next()
+        .unwrap()
+        .to_string()
+        + "!"
+        + &Uuid::new_v4().to_string().split('-').last().unwrap();
+    if let Err(e) = provider
+        .reset_password(&node_conn, &result.instance_id, &root_password)
+        .await
+    {
         error!(error = %e, instance_id = %result.instance_id, "failed to set initial root password");
     }
 
@@ -238,18 +247,6 @@ async fn process_order(
     .bind(plan.memory_mb as i64)
     .bind(plan.storage_gb as i64)
     .bind(&node_id_str)
-    .execute(&mut *tx)
-    .await?;
-
-    // Update Port Lease
-    sqlx::query(
-        "UPDATE nat_port_leases SET
-            reserved = 1,
-            reserved_for_order_id = ?
-         WHERE id = ?",
-    )
-    .bind(order_id_str)
-    .bind(&lease_id)
     .execute(&mut *tx)
     .await?;
 

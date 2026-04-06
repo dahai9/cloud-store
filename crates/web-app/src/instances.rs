@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use shared_domain::{InstanceStatus, DEFAULT_OS_TEMPLATE};
 use sqlx::Row;
 use tokio_tungstenite::tungstenite::Message as TungMessage;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 #[derive(Serialize)]
 pub struct InstanceItem {
@@ -22,8 +22,13 @@ pub struct InstanceItem {
     pub os_template: String,
     pub root_password: Option<String>,
     pub created_at: String,
-    pub nat_ip: Option<String>,
-    pub nat_port_range: Option<String>,
+    pub nat_info: Vec<NatInfo>,
+}
+
+#[derive(Serialize)]
+pub struct NatInfo {
+    pub ip: String,
+    pub range: String,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -118,8 +123,7 @@ pub async fn list_instances(
                     os_template,
                     root_password,
                     created_at,
-                    nat_ip: None,
-                    nat_port_range: None,
+                    nat_info: vec![],
                 }
             },
         )
@@ -136,12 +140,7 @@ pub async fn get_instance(
     let user = auth::require_user(&headers, &state).await?;
 
     let row = sqlx::query(
-        "SELECT i.id, i.node_id, i.plan_id, i.status, i.os_template, i.root_password, i.created_at,
-                l.public_ip, l.start_port, l.end_port
-         FROM instances i
-         LEFT JOIN orders o ON i.order_id = o.id
-         LEFT JOIN nat_port_leases l ON l.node_id = i.node_id AND l.reserved_for_order_id = o.id
-         WHERE i.id = ? AND i.user_id = ? LIMIT 1"
+        "SELECT id, node_id, plan_id, status, os_template, root_password, created_at FROM instances WHERE id = ? AND user_id = ? LIMIT 1"
     )
     .bind(&id)
     .bind(&user.id)
@@ -153,24 +152,44 @@ pub async fn get_instance(
     })?
     .ok_or((StatusCode::NOT_FOUND, "instance not found"))?;
 
-    let start_port: Option<i64> = row.get("start_port");
-    let end_port: Option<i64> = row.get("end_port");
-    let port_range = if let (Some(s), Some(e)) = (start_port, end_port) {
-        Some(format!("{}-{}", s, e))
-    } else {
-        None
-    };
+    let node_id: String = row.get("node_id");
+
+    // Fetch all NAT pools for this node
+    let pools = sqlx::query(
+        "SELECT public_ip, start_port, end_port FROM nat_port_leases WHERE node_id = ?",
+    )
+    .bind(&node_id)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|err| {
+        error!(error = %err, node_id = %node_id, "failed to query node nat pools");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to load nat pools",
+        )
+    })?;
+
+    let nat_info = pools
+        .into_iter()
+        .map(|p| {
+            let start_port: i64 = p.get("start_port");
+            let end_port: i64 = p.get("end_port");
+            NatInfo {
+                ip: p.get("public_ip"),
+                range: format!("{}-{}", start_port, end_port),
+            }
+        })
+        .collect();
 
     Ok(Json(InstanceItem {
         id: row.get("id"),
-        node_id: row.get("node_id"),
+        node_id,
         plan_id: row.get("plan_id"),
         status: row.get("status"),
         os_template: row.get("os_template"),
         root_password: row.get("root_password"),
         created_at: row.get("created_at"),
-        nat_ip: row.get("public_ip"),
-        nat_port_range: port_range,
+        nat_info,
     }))
 }
 
@@ -182,13 +201,14 @@ pub async fn list_nat_mappings(
     let user = auth::require_user(&headers, &state).await?;
 
     // Verify ownership
-    let _ = sqlx::query_scalar::<_, String>("SELECT id FROM instances WHERE id = ? AND user_id = ?")
-        .bind(&instance_id)
-        .bind(&user.id)
-        .fetch_optional(&state.db)
-        .await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?
-        .ok_or((StatusCode::FORBIDDEN, "access denied"))?;
+    let _ =
+        sqlx::query_scalar::<_, String>("SELECT id FROM instances WHERE id = ? AND user_id = ?")
+            .bind(&instance_id)
+            .bind(&user.id)
+            .fetch_optional(&state.db)
+            .await
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?
+            .ok_or((StatusCode::FORBIDDEN, "access denied"))?;
 
     let rows = sqlx::query_as::<_, (String, i64, i64, String, String)>(
         "SELECT id, internal_port, external_port, protocol, created_at FROM nat_mappings WHERE instance_id = ? ORDER BY created_at DESC",
@@ -198,13 +218,16 @@ pub async fn list_nat_mappings(
     .await
     .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load mappings"))?;
 
-    let items = rows.into_iter().map(|r| NatMappingItem {
-        id: r.0,
-        internal_port: r.1 as i32,
-        external_port: r.2 as i32,
-        protocol: r.3,
-        created_at: r.4,
-    }).collect();
+    let items = rows
+        .into_iter()
+        .map(|r| NatMappingItem {
+            id: r.0,
+            internal_port: r.1 as i32,
+            external_port: r.2 as i32,
+            protocol: r.3,
+            created_at: r.4,
+        })
+        .collect();
 
     Ok(Json(items))
 }
@@ -239,11 +262,12 @@ pub async fn add_nat_mapping(
     let nat_limit = instance.4;
 
     // Check mapping count
-    let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM nat_mappings WHERE instance_id = ?")
-        .bind(&instance_id)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
+    let count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM nat_mappings WHERE instance_id = ?")
+            .bind(&instance_id)
+            .fetch_one(&state.db)
+            .await
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
 
     if count >= nat_limit {
         return Err((StatusCode::BAD_REQUEST, "NAT mapping limit reached"));
@@ -260,7 +284,10 @@ pub async fn add_nat_mapping(
     .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
 
     if pool_match == 0 {
-        return Err((StatusCode::BAD_REQUEST, "External port is not in the allowed pool for this node"));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "External port is not in the allowed pool for this node",
+        ));
     }
 
     // Check if external port is already used
@@ -293,16 +320,27 @@ pub async fn add_nat_mapping(
         endpoint: instance.2,
         token: instance.3,
     };
-    let provider = IncusProvider::new().map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "provider error"))?;
-    
-    // Get provider instance id
-    let provider_instance_id = sqlx::query_scalar::<_, String>("SELECT provider_instance_id FROM instances WHERE id = ?")
-        .bind(&instance_id)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
+    let provider =
+        IncusProvider::new().map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "provider error"))?;
 
-    provider.add_nat_mapping(&node_conn, &provider_instance_id, &public_ip, payload.internal_port, payload.external_port, &payload.protocol).await
+    // Get provider instance id
+    let provider_instance_id =
+        sqlx::query_scalar::<_, String>("SELECT provider_instance_id FROM instances WHERE id = ?")
+            .bind(&instance_id)
+            .fetch_one(&state.db)
+            .await
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
+
+    provider
+        .add_nat_mapping(
+            &node_conn,
+            &provider_instance_id,
+            &public_ip,
+            payload.internal_port,
+            payload.external_port,
+            &payload.protocol,
+        )
+        .await
         .map_err(|e| {
             error!(
                 error = %e,
@@ -313,7 +351,10 @@ pub async fn add_nat_mapping(
                 protocol = %payload.protocol,
                 "failed to add nat mapping via provider"
             );
-            (StatusCode::INTERNAL_SERVER_ERROR, "failed to apply NAT mapping on node")
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to apply NAT mapping on node",
+            )
         })?;
 
     // Store in DB
@@ -328,11 +369,12 @@ pub async fn add_nat_mapping(
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
 
-    let created_at = sqlx::query_scalar::<_, String>("SELECT created_at FROM nat_mappings WHERE id = ?")
-        .bind(&id)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
+    let created_at =
+        sqlx::query_scalar::<_, String>("SELECT created_at FROM nat_mappings WHERE id = ?")
+            .bind(&id)
+            .fetch_one(&state.db)
+            .await
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
 
     info!(
         user_id = %user.id,
@@ -375,16 +417,27 @@ pub async fn remove_nat_mapping(
     .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?
     .ok_or((StatusCode::FORBIDDEN, "access denied"))?;
 
-    let provider_instance_id = mapping.4.ok_or((StatusCode::BAD_REQUEST, "instance not provisioned"))?;
+    let provider_instance_id = mapping
+        .4
+        .ok_or((StatusCode::BAD_REQUEST, "instance not provisioned"))?;
     let node_conn = NodeConnection {
         endpoint: mapping.2,
         token: mapping.3,
     };
 
     // Remove via provider
-    let provider = IncusProvider::new().map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "provider error"))?;
-    
-    if let Err(e) = provider.remove_nat_mapping(&node_conn, &provider_instance_id, mapping.0 as i32, &mapping.1).await {
+    let provider =
+        IncusProvider::new().map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "provider error"))?;
+
+    if let Err(e) = provider
+        .remove_nat_mapping(
+            &node_conn,
+            &provider_instance_id,
+            mapping.0 as i32,
+            &mapping.1,
+        )
+        .await
+    {
         error!(
             error = %e,
             user_id = %user.id,
@@ -393,7 +446,10 @@ pub async fn remove_nat_mapping(
             protocol = %mapping.1,
             "failed to remove NAT mapping on node"
         );
-        return Err((StatusCode::INTERNAL_SERVER_ERROR, "failed to remove NAT mapping on node"));
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to remove NAT mapping on node",
+        ));
     }
 
     // Delete from DB
@@ -502,33 +558,27 @@ pub async fn perform_action(
     };
 
     let result = match payload.action {
-        InstanceAction::Start => {
-            provider
-                .start_instance(&node_conn, &provider_instance_id)
-                .await
-                .map(|_| {
-                    let _ = update_status(&state, &id, InstanceStatus::Starting);
-                })
-                .map_err(|e| e.to_string())
-        }
-        InstanceAction::Stop => {
-            provider
-                .stop_instance(&node_conn, &provider_instance_id)
-                .await
-                .map(|_| {
-                    let _ = update_status(&state, &id, InstanceStatus::Stopped);
-                })
-                .map_err(|e| e.to_string())
-        }
-        InstanceAction::Restart => {
-            provider
-                .restart_instance(&node_conn, &provider_instance_id)
-                .await
-                .map(|_| {
-                    let _ = update_status(&state, &id, InstanceStatus::Starting);
-                })
-                .map_err(|e| e.to_string())
-        }
+        InstanceAction::Start => provider
+            .start_instance(&node_conn, &provider_instance_id)
+            .await
+            .map(|_| {
+                let _ = update_status(&state, &id, InstanceStatus::Starting);
+            })
+            .map_err(|e| e.to_string()),
+        InstanceAction::Stop => provider
+            .stop_instance(&node_conn, &provider_instance_id)
+            .await
+            .map(|_| {
+                let _ = update_status(&state, &id, InstanceStatus::Stopped);
+            })
+            .map_err(|e| e.to_string()),
+        InstanceAction::Restart => provider
+            .restart_instance(&node_conn, &provider_instance_id)
+            .await
+            .map(|_| {
+                let _ = update_status(&state, &id, InstanceStatus::Starting);
+            })
+            .map_err(|e| e.to_string()),
         InstanceAction::ResetPassword { new_password } => {
             let pwd = new_password.unwrap_or_else(|| generate_strong_password(11));
             let res = provider
@@ -884,7 +934,10 @@ async fn relay_console(
                         info!(response = %text, "RELAY_CONSOLE: received text from Incus control channel");
                     }
                     Ok(TungMessage::Binary(bin)) => {
-                        info!(len = bin.len(), "RELAY_CONSOLE: received binary from Incus control channel");
+                        info!(
+                            len = bin.len(),
+                            "RELAY_CONSOLE: received binary from Incus control channel"
+                        );
                     }
                     Ok(TungMessage::Ping(payload)) => {
                         if control_send_tx.send(TungMessage::Pong(payload)).is_err() {
@@ -908,15 +961,21 @@ async fn relay_console(
         }
     }));
 
-    info!("relay_console: proceeding to split websockets");
+    info!("relay_console: starting bidirectional relay tasks");
 
-    info!("relay_console: about to split browser websocket");
     let (mut browser_sink, mut browser_stream) = browser_ws.split();
-    info!("relay_console: browser websocket split successfully");
+    let (incus_sink, mut incus_stream) = incus_ws.split();
 
-    info!("relay_console: about to split incus websocket");
-    let (mut incus_sink, mut incus_stream) = incus_ws.split();
-    info!("relay_console: incus websocket split successfully, sinks and streams created");
+    let (data_send_tx, mut data_send_rx) = tokio::sync::mpsc::unbounded_channel::<TungMessage>();
+    let mut incus_sink_inner = incus_sink;
+    let data_writer_task = tokio::spawn(async move {
+        while let Some(msg) = data_send_rx.recv().await {
+            if incus_sink_inner.send(msg).await.is_err() {
+                break;
+            }
+        }
+        let _ = incus_sink_inner.close().await;
+    });
 
     browser_sink
         .send(AxumMessage::Text(
@@ -926,39 +985,29 @@ async fn relay_console(
         .map_err(|err| anyhow::anyhow!("relay_console: failed to send ready event: {err}"))?;
     info!("relay_console: sent ready event to browser");
 
-    info!("relay_console: starting combined relay loop");
-
-    let mut browser_msg_count = 0;
-    let mut incus_msg_count = 0;
-    loop {
-        tokio::select! {
-            msg = browser_stream.next() => {
+    // Task: Browser -> Incus
+    let browser_to_incus = tokio::spawn({
+        let control_send_tx = control_send_tx.clone();
+        let data_send_tx = data_send_tx.clone();
+        async move {
+            let mut browser_msg_count = 0;
+            while let Some(msg) = browser_stream.next().await {
                 match msg {
-                    Some(Ok(AxumMessage::Binary(data))) => {
+                    Ok(AxumMessage::Binary(data)) => {
                         browser_msg_count += 1;
-                        debug!("relay_console: browser→incus received message #{}", browser_msg_count);
-                        debug!("relay_console: browser→incus #{}: binary {} bytes", browser_msg_count, data.len());
-                        if incus_sink.send(TungMessage::Binary(data.into())).await.is_err() {
-                            info!("relay_console: browser→incus: incus sink closed (msg #{})", browser_msg_count);
+                        if data_send_tx.send(TungMessage::Binary(data.into())).is_err() {
                             break;
                         }
                     }
-                    Some(Ok(AxumMessage::Text(text))) => {
+                    Ok(AxumMessage::Text(text)) => {
                         browser_msg_count += 1;
                         let text = text.to_string();
 
                         match serde_json::from_str::<BrowserConsoleMessage>(&text) {
                             Ok(BrowserConsoleMessage::Resize { rows, cols }) => {
                                 let Some((rows, cols)) = validate_resize(rows, cols) else {
-                                    warn!(
-                                        rows = rows,
-                                        cols = cols,
-                                        "relay_console: dropping out-of-range resize request"
-                                    );
                                     continue;
                                 };
-
-                                info!(rows = rows, cols = cols, "relay_console: browser resize requested");
 
                                 let control_message = TungMessage::Text(
                                     serde_json::json!({
@@ -973,112 +1022,106 @@ async fn relay_console(
                                 );
 
                                 if control_send_tx.send(control_message).is_err() {
-                                    warn!("relay_console: control queue closed while sending resize");
                                     break;
                                 }
-
-                                info!(rows = rows, cols = cols, "relay_console: forwarded window-resize to Incus");
-
                                 continue;
                             }
-                            Err(err) => {
-                                warn!(
-                                    error = %err,
-                                    message_size = text.len(),
-                                    "relay_console: dropping unknown text control message"
-                                );
-                                continue;
+                            Err(_) => {
+                                // For VNC, text messages might actually be intended as data
+                                if data_send_tx
+                                    .send(TungMessage::Binary(text.into_bytes().into()))
+                                    .is_err()
+                                {
+                                    break;
+                                }
                             }
                         }
                     }
-                    Some(Ok(AxumMessage::Close(_))) => {
-                        browser_msg_count += 1;
-                        info!("relay_console: browser→incus: browser close frame received (after {} msgs)", browser_msg_count);
-                        break;
+                    Ok(AxumMessage::Ping(payload)) => {
+                        if data_send_tx
+                            .send(TungMessage::Ping(payload.into()))
+                            .is_err()
+                        {
+                            break;
+                        }
                     }
-                    Some(Ok(AxumMessage::Ping(_))) => {
-                        browser_msg_count += 1;
-                        debug!("relay_console: browser→incus #{}: ping", browser_msg_count);
-                    }
-                    Some(Ok(AxumMessage::Pong(_))) => {
-                        browser_msg_count += 1;
-                        debug!("relay_console: browser→incus #{}: pong", browser_msg_count);
-                    }
-                    Some(Err(err)) => {
-                        browser_msg_count += 1;
-                        info!("relay_console: browser→incus: browser error: {} (after {} msgs)", err, browser_msg_count);
-                        break;
-                    }
-                    None => {
-                        info!("relay_console: browser→incus stream ended");
-                        break;
-                    }
+                    Ok(AxumMessage::Close(_)) => break,
+                    Err(_) => break,
+                    _ => {}
                 }
             }
-            msg = incus_stream.next() => {
-                match msg {
-                    Some(Ok(TungMessage::Binary(data))) => {
-                        incus_msg_count += 1;
-                        debug!("relay_console: incus→browser received message #{}", incus_msg_count);
-                        debug!("relay_console: incus→browser #{}: binary {} bytes", incus_msg_count, data.len());
-                        if browser_sink.send(AxumMessage::Binary(data.into())).await.is_err() {
-                            info!("relay_console: incus→browser: browser sink closed (msg #{})", incus_msg_count);
-                            break;
-                        }
-                    }
-                    Some(Ok(TungMessage::Text(text))) => {
-                        incus_msg_count += 1;
-                        debug!("relay_console: incus→browser received message #{}", incus_msg_count);
-                        debug!("relay_console: incus→browser #{}: text", incus_msg_count);
-                        if browser_sink.send(AxumMessage::Binary(text.as_bytes().to_vec().into())).await.is_err() {
-                            info!("relay_console: incus→browser: browser sink closed");
-                            break;
-                        }
-                    }
-                    Some(Ok(TungMessage::Ping(payload))) => {
-                        incus_msg_count += 1;
-                        debug!("relay_console: incus→browser received message #{}", incus_msg_count);
-                        debug!("relay_console: incus→browser #{}: ping {} bytes", incus_msg_count, payload.len());
-                        if incus_sink.send(TungMessage::Pong(payload)).await.is_err() {
-                            info!("relay_console: incus→browser: incus pong send failed");
-                            break;
-                        }
-                    }
-                    Some(Ok(TungMessage::Pong(_))) => {
-                        incus_msg_count += 1;
-                        debug!("relay_console: incus→browser #{}: pong", incus_msg_count);
-                    }
-                    Some(Ok(TungMessage::Frame(_))) => {
-                        debug!("relay_console: incus→browser #{}: frame", incus_msg_count);
-                    }
-                    Some(Ok(TungMessage::Close(_))) => {
-                        incus_msg_count += 1;
-                        info!("relay_console: incus→browser: incus close frame received (after {} msgs)", incus_msg_count);
-                        break;
-                    }
-                    Some(Err(err)) => {
-                        incus_msg_count += 1;
-                        info!("relay_console: incus→browser: incus error: {} (after {} msgs)", err, incus_msg_count);
-                        break;
-                    }
-                    None => {
-                        info!("relay_console: incus→browser stream ended");
-                        break;
-                    }
-                }
-            }
+            info!(
+                "relay_console: browser to incus task ended ({} msgs)",
+                browser_msg_count
+            );
         }
+    });
+
+    // Task: Incus -> Browser
+    let incus_to_browser = tokio::spawn({
+        let data_send_tx = data_send_tx.clone();
+        async move {
+            let mut incus_msg_count = 0;
+            while let Some(msg) = incus_stream.next().await {
+                match msg {
+                    Ok(TungMessage::Binary(data)) => {
+                        incus_msg_count += 1;
+                        if browser_sink
+                            .send(AxumMessage::Binary(data.into()))
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    Ok(TungMessage::Text(text)) => {
+                        incus_msg_count += 1;
+                        // Incus occasionally sends state via text; forward as binary to browser
+                        if browser_sink
+                            .send(AxumMessage::Binary(text.as_bytes().to_vec().into()))
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    Ok(TungMessage::Ping(payload)) => {
+                        // Answer pings from Incus directly
+                        if data_send_tx.send(TungMessage::Pong(payload)).is_err() {
+                            break;
+                        }
+                    }
+                    Ok(TungMessage::Close(_)) => break,
+                    Err(_) => break,
+                    _ => {}
+                }
+            }
+            let _ = browser_sink.close().await;
+            info!(
+                "relay_console: incus to browser task ended ({} msgs)",
+                incus_msg_count
+            );
+        }
+    });
+
+    // Wait for either task to finish or fail
+    tokio::select! {
+        _ = browser_to_incus => {
+            info!("relay_console: browser_to_incus task finished first");
+        },
+        _ = incus_to_browser => {
+            info!("relay_console: incus_to_browser task finished first");
+        },
     }
 
-    info!("relay_console: relay session ended");
-
+    data_writer_task.abort();
     if let Some(task) = control_reader_task {
         task.abort();
     }
-
     if let Some(task) = control_writer_task {
         task.abort();
     }
 
+    info!("relay_console: bidirectional relay session ended");
     Ok(())
 }

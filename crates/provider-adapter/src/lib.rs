@@ -152,11 +152,7 @@ pub trait ComputeProvider: Send + Sync {
         node: &NodeConnection,
         instance_id: &str,
     ) -> anyhow::Result<InstanceMetrics>;
-    async fn get_status(
-        &self,
-        node: &NodeConnection,
-        instance_id: &str,
-    ) -> anyhow::Result<String>;
+    async fn get_status(&self, node: &NodeConnection, instance_id: &str) -> anyhow::Result<String>;
     async fn get_console_token(
         &self,
         node: &NodeConnection,
@@ -721,7 +717,10 @@ impl ComputeProvider for IncusProvider {
             .await?;
         let body: serde_json::Value = res.json().await?;
 
-        let status = body["metadata"]["status"].as_str().unwrap_or("unknown").to_lowercase();
+        let status = body["metadata"]["status"]
+            .as_str()
+            .unwrap_or("unknown")
+            .to_lowercase();
         let cpu_usage = body["metadata"]["cpu"]["usage"].as_f64().unwrap_or(0.0) / 1_000_000_000.0;
         let mem_usage =
             body["metadata"]["memory"]["usage"].as_f64().unwrap_or(0.0) / 1024.0 / 1024.0;
@@ -735,23 +734,19 @@ impl ComputeProvider for IncusProvider {
         })
     }
 
-    async fn get_status(
-        &self,
-        node: &NodeConnection,
-        instance_id: &str,
-    ) -> anyhow::Result<String> {
+    async fn get_status(&self, node: &NodeConnection, instance_id: &str) -> anyhow::Result<String> {
         self.ensure_trusted(node).await?;
         let client = self.get_client().await?;
 
         let res = client
-            .get(format!(
-                "{}/1.0/instances/{}",
-                node.endpoint, instance_id
-            ))
+            .get(format!("{}/1.0/instances/{}", node.endpoint, instance_id))
             .send()
             .await?;
         let body: serde_json::Value = res.json().await?;
-        let status = body["metadata"]["status"].as_str().unwrap_or("unknown").to_lowercase();
+        let status = body["metadata"]["status"]
+            .as_str()
+            .unwrap_or("unknown")
+            .to_lowercase();
         Ok(status)
     }
 
@@ -786,7 +781,10 @@ impl ComputeProvider for IncusProvider {
         let client = self.get_client().await?;
 
         let res = client
-            .post(format!("{}/1.0/instances/{}/exec", node.endpoint, instance_id))
+            .post(format!(
+                "{}/1.0/instances/{}/exec",
+                node.endpoint, instance_id
+            ))
             .json(&serde_json::json!({
                 "command": ["/bin/bash", "--login"],
                 "environment": {
@@ -824,11 +822,39 @@ impl ComputeProvider for IncusProvider {
         self.ensure_trusted(node).await?;
         let client = self.get_client().await?;
 
+        // 1. Fetch current state to get internal IP
+        let res = client
+            .get(format!(
+                "{}/1.0/instances/{}/state",
+                node.endpoint, instance_id
+            ))
+            .send()
+            .await?;
+        let body: serde_json::Value = res.json().await?;
+
+        // Extract first IPv4 address from any interface except loopback
+        let internal_ip = body["metadata"]["network"]
+            .as_object()
+            .and_then(|networks| {
+                networks.values().find_map(|net| {
+                    net["addresses"].as_array().and_then(|addrs| {
+                        addrs.iter().find_map(|addr| {
+                            if addr["family"] == "inet" && addr["scope"] == "global" {
+                                addr["address"].as_str()
+                            } else {
+                                None
+                            }
+                        })
+                    })
+                })
+            })
+            .ok_or_else(|| anyhow::anyhow!("instance has no global IPv4 address for NAT"))?;
+
         let device_name = format!("nat-{}-{}", protocol, external_port);
         let device_config = serde_json::json!({
             "type": "proxy",
             "listen": format!("{}:{}:{}", protocol, public_ip, external_port),
-            "connect": format!("{}:127.0.0.1:{}", protocol, internal_port),
+            "connect": format!("{}:{}:{}", protocol, internal_ip, internal_port),
             "nat": "true"
         });
 
@@ -840,10 +866,13 @@ impl ComputeProvider for IncusProvider {
 
         self.submit_operation_request(
             &client,
-            client.patch(format!("{}/1.0/instances/{}", node.endpoint, instance_id)).json(&patch_req),
+            client
+                .patch(format!("{}/1.0/instances/{}", node.endpoint, instance_id))
+                .json(&patch_req),
             &node.endpoint,
-            "add nat mapping device"
-        ).await
+            "add nat mapping device",
+        )
+        .await
     }
 
     async fn remove_nat_mapping(
@@ -865,10 +894,13 @@ impl ComputeProvider for IncusProvider {
 
         self.submit_operation_request(
             &client,
-            client.patch(format!("{}/1.0/instances/{}", node.endpoint, instance_id)).json(&patch_req),
+            client
+                .patch(format!("{}/1.0/instances/{}", node.endpoint, instance_id))
+                .json(&patch_req),
             &node.endpoint,
-            "remove nat mapping device"
-        ).await
+            "remove nat mapping device",
+        )
+        .await
     }
     async fn suspend_instance(
         &self,

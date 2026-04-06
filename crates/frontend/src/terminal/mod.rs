@@ -4,4 +4,3 @@ pub mod grid;
 pub mod parser;
 
 pub use component::TerminalView;
-pub use parser::Terminal;

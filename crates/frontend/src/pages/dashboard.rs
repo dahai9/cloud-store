@@ -83,7 +83,14 @@ pub fn ServicesPage() -> Element {
         spawn(async move {
             loop {
                 if let Ok(instances) = api::fetch_instances(&api_base, &token).await {
-                    session.write().instances = instances;
+                    let changed = {
+                        let current = session.peek();
+                        current.instances != instances
+                    };
+
+                    if changed {
+                        session.write().instances = instances;
+                    }
                 }
                 TimeoutFuture::new(15000).await;
             }
@@ -134,17 +141,16 @@ fn instance_status_class(status: &str) -> &'static str {
 #[component]
 pub fn InstanceDetailPage(id: String) -> Element {
     let session = use_context::<Signal<SessionState>>();
-    let state = session();
     let navigator = use_navigator();
 
-    if state.token.is_none() {
+    if session.peek().token.is_none() {
         return rsx! {
             LoginRequiredView {}
         };
     }
 
-    let token = state.token.clone().unwrap();
-    let api_base = state.api_base.clone();
+    let token = session.peek().token.clone().unwrap();
+    let api_base = session.peek().api_base.clone();
 
     let mut instance = use_signal(|| None::<crate::models::InstanceItem>);
     let mut metrics = use_signal(|| None::<crate::models::InstanceMetrics>);
@@ -401,11 +407,13 @@ pub fn InstanceDetailPage(id: String) -> Element {
 
             section { class: "panel",
                 h4 { "NAT Port Mappings" }
-                p { class: "muted small", 
-                    if let (Some(ip), Some(range)) = (inst.nat_ip.as_deref(), inst.nat_port_range.as_deref()) {
-                        "Public NAT IP: {ip} | Port Range: {range}"
+                div { class: "muted small",
+                    if inst.nat_info.is_empty() {
+                        p { "Public NAT IP: (Pending Allocation)" }
                     } else {
-                        "Public NAT IP: (Pending Allocation)"
+                        for pool in &inst.nat_info {
+                            p { "Public IP: {pool.ip} | Port Range: {pool.range}" }
+                        }
                     }
                 }
                 div { class: "nat-mappings-container",
@@ -1081,22 +1089,26 @@ pub fn LoginRequiredView() -> Element {
 #[component]
 pub fn ConsolePage(id: String) -> Element {
     let session = use_context::<Signal<SessionState>>();
-    let state = session();
     let navigator = use_navigator();
 
-    if state.token.is_none() {
+    if session.peek().token.is_none() {
         return rsx! {
             LoginRequiredView {}
         };
     }
 
-    let token = state.token.clone().unwrap();
-    let api_base = state.api_base.clone();
+    let token = session.peek().token.clone().unwrap();
+    let api_base = session.peek().api_base.clone();
 
     // Build the proxy WebSocket URL:
     //   http://host:port  ->  ws://host:port/api/instances/{id}/console/ws?token=JWT
     //   https://host:port ->  wss://host:port/api/instances/{id}/console/ws?token=JWT
-    let ws_url = crate::api::build_console_ws_url(&api_base, &id, &token);
+    let ws_url = use_memo({
+        let id = id.clone();
+        let api_base = api_base.clone();
+        let token = token.clone();
+        move || crate::api::build_console_ws_url(&api_base, &id, &token)
+    });
 
     rsx! {
         DashboardShell { title: "Instance Console", active_tab: DashboardTab::Services,
@@ -1116,7 +1128,7 @@ pub fn ConsolePage(id: String) -> Element {
 
             div { class: "panel",
                 div { class: "terminal-wrapper",
-                    crate::terminal::TerminalView { url: ws_url.clone() }
+                    crate::terminal::TerminalView { url: ws_url() }
                 }
             }
         }

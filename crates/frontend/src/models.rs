@@ -121,8 +121,13 @@ pub struct InstanceItem {
     pub os_template: String,
     pub root_password: Option<String>,
     pub created_at: String,
-    pub nat_ip: Option<String>,
-    pub nat_port_range: Option<String>,
+    pub nat_info: Vec<NatInfo>,
+}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq)]
+pub struct NatInfo {
+    pub ip: String,
+    pub range: String,
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq)]
