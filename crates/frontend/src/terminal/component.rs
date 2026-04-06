@@ -459,7 +459,7 @@ pub fn TerminalView(url: String) -> Element {
                     div {
                         class: "terminal-container-rust",
                         id: "terminal-viewport",
-                        style: "position: absolute; inset: 0; box-sizing: border-box; padding: 15px; font-family: \"DejaVu Sans Mono\", \"Noto Sans Mono\", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace; font-variant-ligatures: none; font-feature-settings: 'liga' 0; font-size: 14px; line-height: 1; overflow: hidden; color: #ccc; outline: none; display: flex; flex-direction: column;",
+                        style: "position: absolute; inset: 0; box-sizing: border-box; padding: 15px; font-family: \"DejaVu Sans Mono\", \"Noto Sans Mono\", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace; font-variant-ligatures: none; font-feature-settings: 'liga' 0; font-size: 14px; line-height: 1.15; overflow: hidden; color: #ccc; outline: none; display: flex; flex-direction: column;",
 
                         tabindex: "0",
                         autofocus: "true",
@@ -474,7 +474,7 @@ pub fn TerminalView(url: String) -> Element {
                             }
                         },
 
-                        pre { style: "margin: 0; width: 100%; min-width: 0; max-width: 100%; white-space: pre; line-height: 1; letter-spacing: 0; flex: 1; overflow: hidden;",
+                        pre { style: "margin: 0; width: 100%; min-width: 0; max-width: 100%; white-space: pre; line-height: 1.15; letter-spacing: 0; flex: 1; overflow: hidden;",
                             {
                                 term_val
                                     .grid
@@ -485,10 +485,10 @@ pub fn TerminalView(url: String) -> Element {
                                         rsx! {
                                             div {
                                                 key: "{r_idx}",
-                                                style: "height: 1em; display: block; position: relative; width: 100%; overflow: hidden; white-space: pre; word-wrap: normal; word-break: keep-all; flex-shrink: 0;",
+                                                style: "height: 1.15em; display: block; position: relative; width: 100%; overflow: hidden; white-space: pre; word-wrap: normal; word-break: keep-all; flex-shrink: 0;",
                                                 {render_line(line)}
                                                 if r_idx == cursor_row {
-                                                    div { style: "position: absolute; width: 1ch; height: 1em; background: rgba(255, 255, 255, 0.6); left: {cursor_col}ch; top: 0; z-index: 1;" }
+                                                    div { style: "position: absolute; width: 1ch; height: 1.15em; background: rgba(255, 255, 255, 0.6); left: {cursor_col}ch; top: 0; z-index: 1;" }
                                                 }
                                             }
                                         }
