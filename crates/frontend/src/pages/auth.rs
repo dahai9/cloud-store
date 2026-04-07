@@ -3,6 +3,7 @@ use crate::api;
 use crate::models::{AuthTransportRisk, Route, SessionState};
 
 use dioxus::prelude::*;
+use dioxus_i18n::t;
 
 #[component]
 pub fn LoginPage(source: Option<String>, plan: Option<String>) -> Element {
@@ -119,9 +120,9 @@ pub fn LoginPage(source: Option<String>, plan: Option<String>) -> Element {
             header { class: "public-header",
                 h1 {
                     if is_checkout_flow {
-                        "Continue Checkout"
+                        "{t!(\"auth_checkout_resume_title\")}"
                     } else {
-                        "Login Required"
+                        "{t!(\"auth_login_required\")}"
                     }
                 }
                 button {
@@ -137,43 +138,43 @@ pub fn LoginPage(source: Option<String>, plan: Option<String>) -> Element {
                             navigator.push(Route::StorefrontPage {});
                         }
                     },
-                    "Back"
+                    "{t!(\"back_btn\")}"
                 }
             }
             main { class: "public-main login-layout",
                 section { class: "login-hero panel-soft",
                     if is_checkout_flow {
-                        div { class: "eyebrow", "Checkout resume" }
-                        h2 { "Sign in to continue checkout" }
+                        div { class: "eyebrow", "{t!(\"auth_checkout_resume_eyebrow\")}" }
+                        h2 { "{t!(\"auth_checkout_resume_title\")}" }
                         p {
-                            "Log in to continue the order you already selected. The chosen plan will be restored after authentication."
+                            "{t!(\"auth_checkout_resume_desc\")}"
                         }
                         div { class: "chip-row",
-                            span { class: "chip", "Return to selected plan" }
-                            span { class: "chip", "Session state is persisted" }
-                            span { class: "chip", "PayPal approval stays linked" }
+                            span { class: "chip", "{t!(\"auth_chip_return_plan\")}" }
+                            span { class: "chip", "{t!(\"auth_chip_session\")}" }
+                            span { class: "chip", "{t!(\"auth_chip_paypal_linked\")}" }
                         }
                         div { class: "login-callout",
-                            strong { "Tips" }
+                            strong { "{t!(\"auth_tips_title\")}" }
                             p {
-                                "If you came from checkout, do not switch browser tabs before signing in so the plan choice stays intact."
+                                "{t!(\"auth_checkout_tips_desc\")}"
                             }
                         }
                     } else {
-                        div { class: "eyebrow", "Secure access" }
-                        h2 { "Sign in to manage your account" }
+                        div { class: "eyebrow", "{t!(\"auth_secure_access_eyebrow\")}" }
+                        h2 { "{t!(\"auth_secure_access_title\")}" }
                         p {
-                            "Use your existing account to open the dashboard, review invoices, and manage services."
+                            "{t!(\"auth_secure_access_desc\")}"
                         }
                         div { class: "chip-row",
-                            span { class: "chip", "Dashboard access" }
-                            span { class: "chip", "Invoices and services" }
-                            span { class: "chip", "Register if you do not have an account" }
+                            span { class: "chip", "{t!(\"auth_chip_dashboard\")}" }
+                            span { class: "chip", "{t!(\"auth_chip_invoices\")}" }
+                            span { class: "chip", "{t!(\"auth_chip_register\")}" }
                         }
                         div { class: "login-callout",
-                            strong { "Tips" }
+                            strong { "{t!(\"auth_tips_title\")}" }
                             p {
-                                "You can log in first and then browse products or open the customer center from the home page."
+                                "{t!(\"auth_general_tips_desc\")}"
                             }
                         }
                     }
@@ -182,16 +183,16 @@ pub fn LoginPage(source: Option<String>, plan: Option<String>) -> Element {
                 section { class: "checkout-card login-card",
                     h3 {
                         if is_checkout_flow {
-                            "Complete your checkout"
+                            "{t!(\"auth_complete_checkout_title\")}"
                         } else {
-                            "Welcome back"
+                            "{t!(\"auth_welcome_back_title\")}"
                         }
                     }
                     p { class: "muted",
                         if is_checkout_flow {
-                            "Sign in to continue the selected plan and finish payment."
+                            "{t!(\"auth_complete_checkout_desc\")}"
                         } else {
-                            "You can login with an existing account, or register a new user directly."
+                            "{t!(\"auth_welcome_back_desc\")}"
                         }
                     }
 
@@ -201,24 +202,24 @@ pub fn LoginPage(source: Option<String>, plan: Option<String>) -> Element {
 
                     div { class: "form-stack",
                         div { class: "order-meta",
-                            label { "Email" }
+                            label { "{t!(\"auth_email_label\")}" }
                             input {
                                 r#type: "email",
                                 class: "text-input",
                                 value: "{email()}",
-                                placeholder: "you@example.com",
+                                placeholder: "{t!(\"auth_email_placeholder\")}",
                                 autocomplete: "email",
                                 oninput: move |evt| email.set(evt.value()),
                             }
                         }
 
                         div { class: "order-meta",
-                            label { "Password" }
+                            label { "{t!(\"auth_password_label\")}" }
                             input {
                                 r#type: "password",
                                 class: "text-input",
                                 value: "{password()}",
-                                placeholder: "password",
+                                placeholder: "{t!(\"auth_password_placeholder\")}",
                                 autocomplete: "current-password",
                                 oninput: move |evt| password.set(evt.value()),
                             }
@@ -232,9 +233,9 @@ pub fn LoginPage(source: Option<String>, plan: Option<String>) -> Element {
                     if session().loading {
                         p { class: "muted",
                             if is_checkout_flow {
-                                "正在验证账号并恢复订单..."
+                                "{t!(\"auth_validating_checkout\")}"
                             } else {
-                                "正在验证账号并同步用户数据..."
+                                "{t!(\"auth_validating_sync\")}"
                             }
                         }
                     }
@@ -251,14 +252,14 @@ pub fn LoginPage(source: Option<String>, plan: Option<String>) -> Element {
                             onclick: on_login,
                             if session().loading {
                                 if is_checkout_flow {
-                                    "Restoring order..."
+                                    "{t!(\"auth_restoring_order\")}"
                                 } else {
-                                    "Loading..."
+                                    "{t!(\"auth_loading\")}"
                                 }
                             } else if is_checkout_flow {
-                                "Continue Checkout"
+                                "{t!(\"auth_continue_checkout\")}"
                             } else {
-                                "Login"
+                                "{t!(\"login_btn\")}"
                             }
                         }
                         button {
@@ -271,9 +272,9 @@ pub fn LoginPage(source: Option<String>, plan: Option<String>) -> Element {
                                 ),
                             onclick: on_register,
                             if is_checkout_flow {
-                                "Register instead"
+                                "{t!(\"auth_register_instead\")}"
                             } else {
-                                "Register"
+                                "{t!(\"auth_register\")}"
                             }
                         }
                     }

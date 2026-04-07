@@ -551,6 +551,28 @@ body::before {
   transform: translateY(0) scale(0.98);
 }
 
+.btn-success {
+  border: 1px solid #149c5c;
+  border-radius: 10px;
+  background: #1dbf73;
+  color: #fff;
+  height: 36px;
+  padding: 0 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.btn-success:hover {
+  transform: translateY(-1px);
+  background: #1aa663;
+  box-shadow: 0 10px 20px rgba(29, 191, 115, 0.15);
+}
+
+.btn-success:active {
+  transform: translateY(0) scale(0.98);
+}
+
 .avatar {
   width: 34px;
   height: 34px;
@@ -1469,8 +1491,10 @@ select:focus-visible {
 }
 
 .btn-sm {
-    padding: 2px 8px;
-    font-size: 0.85rem;
+    height: 28px;
+    padding: 0 10px;
+    font-size: 13px;
+    border-radius: 6px;
 }
 
 /* Loading Spinner */

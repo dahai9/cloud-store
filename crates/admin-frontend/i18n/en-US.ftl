@@ -1,0 +1,9 @@
+nav_overview = Overview
+nav_guests = Guests
+nav_instances = Instances
+nav_plans = Plans
+nav_nodes = Nodes
+nav_nat_leases = NAT Leases
+nav_tickets = Tickets
+nav_logout = Logout
+switch_lang = 中文

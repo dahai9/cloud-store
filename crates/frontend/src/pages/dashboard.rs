@@ -3,8 +3,9 @@ use chrono::{DateTime, Utc};
 use crate::api;
 
 use crate::models::{DashboardTab, Route, SessionState};
-
 use dioxus::prelude::*;
+use dioxus_i18n::prelude::i18n;
+use dioxus_i18n::t;
 
 use gloo_timers::future::TimeoutFuture;
 
@@ -34,25 +35,25 @@ pub fn ProfilePage() -> Element {
         .unwrap_or_else(|| "user".to_string());
 
     rsx! {
-        DashboardShell { title: "User Information", active_tab: DashboardTab::Profile,
+        DashboardShell { title: "{t!(\"dash_user_info_title\")}", active_tab: DashboardTab::Profile,
             section { class: "grid-two",
                 article { class: "panel",
-                    h3 { "Account" }
-                    p { class: "muted", "User ID" }
+                    h3 { "{t!(\"dash_account_title\")}" }
+                    p { class: "muted", "{t!(\"dash_user_id\")}" }
                     p { class: "fact", "{user_id}" }
-                    p { class: "muted", "Email" }
+                    p { class: "muted", "{t!(\"dash_email\")}" }
                     p { class: "fact", "{user_email}" }
-                    p { class: "muted", "Role" }
+                    p { class: "muted", "{t!(\"dash_role\")}" }
                     p { class: "fact", "{user_role}" }
                 }
                 article { class: "panel",
-                    h3 { "Portal Status" }
-                    p { class: "muted", "Ticket Count" }
+                    h3 { "{t!(\"dash_portal_status_title\")}" }
+                    p { class: "muted", "{t!(\"dash_ticket_count\")}" }
                     p { class: "fact", "{state.tickets.len()}" }
-                    p { class: "muted", "Invoice Count" }
+                    p { class: "muted", "{t!(\"dash_invoice_count\")}" }
                     p { class: "fact", "{state.invoices.len()}" }
-                    p { class: "muted", "Session" }
-                    p { class: "fact", "Authenticated" }
+                    p { class: "muted", "{t!(\"dash_session\")}" }
+                    p { class: "fact", "{t!(\"dash_authenticated\")}" }
                 }
             }
         }
@@ -98,12 +99,12 @@ pub fn ServicesPage() -> Element {
     });
 
     rsx! {
-        DashboardShell { title: "My Services", active_tab: DashboardTab::Services,
+        DashboardShell { title: "{t!(\"dash_my_services_title\")}", active_tab: DashboardTab::Services,
             section { class: "panel",
-                h3 { "Active Instances" }
+                h3 { "{t!(\"dash_active_instances\")}" }
                 div { class: "service-list",
                     if state.instances.is_empty() {
-                        p { class: "muted", "You don't have any active instances yet." }
+                        p { class: "muted", "{t!(\"dash_no_instances\")}" }
                     } else {
                         for item in &state.instances {
                             Link {
@@ -113,10 +114,10 @@ pub fn ServicesPage() -> Element {
                                 article { class: "service-item",
                                     div {
                                         h4 { "{item.plan_id.to_uppercase()} - {item.id}" }
-                                        p { class: "muted", "Created: {item.created_at}" }
+                                        p { class: "muted", {t!("dash_created_at", time: item.created_at.clone())} }
                                     }
                                     span { class: format!("pill {}", instance_status_class(&item.status)),
-                                        "{item.status}"
+                                        {t!("dash_status_label", status: item.status.clone())}
                                     }
                                 }
                             }
@@ -318,12 +319,12 @@ pub fn InstanceDetailPage(id: String) -> Element {
 
     let Some(inst) = instance() else {
         return rsx! {
-            DashboardShell { title: "Instance Details", active_tab: DashboardTab::Services,
+            DashboardShell { title: "{t!(\"dash_instance_details\")}", active_tab: DashboardTab::Services,
                 div { class: "panel",
                     if let Some(err) = error() {
                         p { class: "notice error-notice", "{err}" }
                     } else {
-                        p { "Loading instance details..." }
+                        p { "{t!(\"dash_loading_instance\")}" }
                     }
                 }
             }
@@ -331,14 +332,14 @@ pub fn InstanceDetailPage(id: String) -> Element {
     };
 
     rsx! {
-        DashboardShell { title: "Manage Instance", active_tab: DashboardTab::Services,
+        DashboardShell { title: "{t!(\"dash_manage_instance\")}", active_tab: DashboardTab::Services,
             div { class: "instance-detail-header",
                 button {
                     class: "btn-secondary",
                     onclick: move |_| {
                         navigator.push(Route::ServicesPage {});
                     },
-                    "← Back to List"
+                    "{t!(\"dash_back_to_list\")}"
                 }
                 h3 { "{inst.plan_id.to_uppercase()} ({inst.id})" }
             }
@@ -349,24 +350,24 @@ pub fn InstanceDetailPage(id: String) -> Element {
 
             section { class: "grid-two",
                 article { class: "panel",
-                    h4 { "Status & Info" }
+                    h4 { "{t!(\"dash_status_info\")}" }
                     div { class: "detail-list",
                         div { class: "detail-item",
-                            span { class: "muted", "Status" }
+                            span { class: "muted", "{t!(\"dash_status\")}" }
                             span { class: format!("pill {}", instance_status_class(&inst.status)),
-                                "{inst.status}"
+                                {t!("dash_status_label", status: inst.status.clone())}
                             }
                         }
                         div { class: "detail-item",
-                            span { class: "muted", "Node" }
+                            span { class: "muted", "{t!(\"dash_node\")}" }
                             span { class: "fact", "{inst.node_id}" }
                         }
                         div { class: "detail-item",
-                            span { class: "muted", "OS Template" }
+                            span { class: "muted", "{t!(\"dash_os_template\")}" }
                             span { class: "fact", "{inst.os_template}" }
                         }
                         div { class: "detail-item",
-                            span { class: "muted", "Root Password" }
+                            span { class: "muted", "{t!(\"dash_root_password\")}" }
                             div { class: "password-field",
                                 if show_password() {
                                     span { class: "fact mono", "{inst.root_password.as_deref().unwrap_or(\"********\")}" }
@@ -374,18 +375,18 @@ pub fn InstanceDetailPage(id: String) -> Element {
                                     span { class: "fact mono", "********" }
                                 }
                                 button {
-                                    class: "btn-icon",
+                                    class: "btn-secondary btn-sm",
                                     onclick: move |_| show_password.set(!show_password()),
-                                    if show_password() { "Hide" } else { "Show" }
+                                    if show_password() { "{t!(\"dash_hide_btn\")}" } else { "{t!(\"dash_show_btn\")}" }
                                 }
                             }
                         }
                         div { class: "detail-item",
-                            span { class: "muted", "Created At" }
+                            span { class: "muted", "{t!(\"dash_created_at_label\")}" }
                             span { class: "fact", "{inst.created_at}" }
                         }
                         div { class: "detail-item",
-                            span { class: "muted", "Auto Renew" }
+                            span { class: "muted", "{t!(\"dash_auto_renew\")}" }
                             button {
                                 class: if inst.auto_renew { "btn-success btn-sm" } else { "btn-secondary btn-sm" },
                                 onclick: {
@@ -405,25 +406,25 @@ pub fn InstanceDetailPage(id: String) -> Element {
                                         });
                                     }
                                 },
-                                if inst.auto_renew { "Enabled" } else { "Disabled" }
+                                if inst.auto_renew { "{t!(\"dash_enabled\")}" } else { "{t!(\"dash_disabled\")}" }
                             }
                         }
                     }
                 }
 
                 article { class: "panel",
-                    h4 { "Real-time Metrics" }
+                    h4 { "{t!(\"dash_realtime_metrics\")}" }
                     if let Some(m) = metrics() {
                         div { class: "metrics-grid",
                             MetricCardWithChart {
-                                title: "CPU",
+                                title: "CPU".to_string(),
                                 value: format!("{:.1}%", m.cpu_usage_percent),
                                 history: metrics_history().iter().map(|mh| mh.cpu_usage_percent).collect(),
                                 color: "#1f57cc",
                                 max_val: 100.0,
                             }
                             MetricCardWithChart {
-                                title: "RAM",
+                                title: "RAM".to_string(),
                                 value: format!("{:.0} MB", m.memory_used_mb),
                                 history: metrics_history().iter().map(|mh| mh.memory_used_mb).collect(),
                                 color: "#1dbf73",
@@ -431,14 +432,14 @@ pub fn InstanceDetailPage(id: String) -> Element {
                                 max_val: metrics_history().iter().map(|mh| mh.memory_used_mb).fold(0.0, f64::max).max(512.0),
                             }
                             MetricCardWithChart {
-                                title: "TX",
+                                title: "TX".to_string(),
                                 value: format!("{:.1} KB/s", (m.network_tx_bytes as f64) / 1024.0),
                                 history: metrics_history().iter().map(|mh| mh.network_tx_bytes as f64).collect(),
                                 color: "#ff8b00",
                                 max_val: metrics_history().iter().map(|mh| mh.network_tx_bytes as f64).fold(0.0, f64::max).max(1024.0),
                             }
                             MetricCardWithChart {
-                                title: "RX",
+                                title: "RX".to_string(),
                                 value: format!("{:.1} KB/s", (m.network_rx_bytes as f64) / 1024.0),
                                 history: metrics_history().iter().map(|mh| mh.network_rx_bytes as f64).collect(),
                                 color: "#9333ea",
@@ -446,19 +447,19 @@ pub fn InstanceDetailPage(id: String) -> Element {
                             }
                         }
                     } else {
-                        p { class: "muted", "Loading metrics..." }
+                        p { class: "muted", "{t!(\"dash_loading_metrics\")}" }
                     }
                 }
             }
 
             section { class: "panel",
-                h4 { "NAT Port Mappings" }
+                h4 { "{t!(\"dash_nat_port_mappings\")}" }
                 div { class: "muted small",
                     if inst.nat_info.is_empty() {
-                        p { "Public NAT IP: (Pending Allocation)" }
+                        p { "{t!(\"dash_public_ip_pending\")}" }
                     } else {
                         for pool in &inst.nat_info {
-                            p { "Public IP: {pool.ip} | Port Range: {pool.range}" }
+                            p { {t!("dash_public_ip_info", ip: pool.ip.clone(), range: pool.range.clone())} }
                         }
                     }
                 }
@@ -466,16 +467,16 @@ pub fn InstanceDetailPage(id: String) -> Element {
                     table {
                         thead {
                             tr {
-                                th { "Internal Port" }
-                                th { "External Port" }
-                                th { "Protocol" }
-                                th { "Action" }
+                                th { "{t!(\"dash_internal_port\")}" }
+                                th { "{t!(\"dash_external_port\")}" }
+                                th { "{t!(\"dash_protocol\")}" }
+                                th { "{t!(\"dash_action\")}" }
                             }
                         }
                         tbody {
                             if nat_mappings().is_empty() {
                                 tr {
-                                    td { colspan: "4", "No port mappings yet" }
+                                    td { colspan: "4", "{t!(\"dash_no_port_mappings\")}" }
                                 }
                             } else {
                                 for mapping in nat_mappings() {
@@ -490,7 +491,7 @@ pub fn InstanceDetailPage(id: String) -> Element {
                                                     let mid = mapping.id.clone();
                                                     move |_| on_remove_nat_mapping(mid.clone())
                                                 },
-                                                "Delete"
+                                                "{t!(\"dash_delete_btn\")}"
                                             }
                                         }
                                     }
@@ -500,11 +501,11 @@ pub fn InstanceDetailPage(id: String) -> Element {
                     }
 
                     div { class: "add-mapping-form",
-                        h5 { "Add New Mapping" }
+                        h5 { "{t!(\"dash_add_new_mapping\")}" }
                         div { class: "form-row",
                             input {
                                 r#type: "number",
-                                placeholder: "Internal Port",
+                                placeholder: "{t!(\"dash_internal_port_placeholder\")}",
                                 id: "internal_port",
                                 oninput: move |_e| {
                                     // We'll use a signal for the form state or just use JS to get values on click
@@ -512,7 +513,7 @@ pub fn InstanceDetailPage(id: String) -> Element {
                             }
                             input {
                                 r#type: "number",
-                                placeholder: "External Port",
+                                placeholder: "{t!(\"dash_external_port_placeholder\")}",
                                 id: "external_port"
                             }
                             select {
@@ -542,7 +543,7 @@ pub fn InstanceDetailPage(id: String) -> Element {
                                         }
                                     }
                                 },
-                                "Add"
+                                "{t!(\"dash_add_btn\")}"
                             }
                         }
                     }
@@ -550,7 +551,7 @@ pub fn InstanceDetailPage(id: String) -> Element {
             }
 
             section { class: "panel danger-zone",
-                h4 { "Instance Actions" }
+                h4 { "{t!(\"dash_instance_actions\")}" }
                 div { class: "action-bar",
                     button {
                         class: "btn-primary",
@@ -558,9 +559,9 @@ pub fn InstanceDetailPage(id: String) -> Element {
                         onclick: move |_| on_action(crate::models::InstanceAction::Start),
                         if action_loading() {
                             span { class: "spinner" }
-                            "Processing..."
+                            "{t!(\"dash_processing\")}"
                         } else {
-                            "Start"
+                            "{t!(\"dash_start_btn\")}"
                         }
                     }
                     button {
@@ -569,9 +570,9 @@ pub fn InstanceDetailPage(id: String) -> Element {
                         onclick: move |_| on_action(crate::models::InstanceAction::Stop),
                         if action_loading() {
                             span { class: "spinner" }
-                            "Processing..."
+                            "{t!(\"dash_processing\")}"
                         } else {
-                            "Stop"
+                            "{t!(\"dash_stop_btn\")}"
                         }
                     }
                     button {
@@ -580,9 +581,9 @@ pub fn InstanceDetailPage(id: String) -> Element {
                         onclick: move |_| on_action(crate::models::InstanceAction::Restart),
                         if action_loading() {
                             span { class: "spinner" }
-                            "Processing..."
+                            "{t!(\"dash_processing\")}"
                         } else {
-                            "Restart"
+                            "{t!(\"dash_restart_btn\")}"
                         }
                     }
                     button {
@@ -598,9 +599,9 @@ pub fn InstanceDetailPage(id: String) -> Element {
                         },
                         if action_loading() {
                             span { class: "spinner" }
-                            "Processing..."
+                            "{t!(\"dash_processing\")}"
                         } else {
-                            "Reinstall"
+                            "{t!(\"dash_reinstall_btn\")}"
                         }
                     }
                     button {
@@ -613,12 +614,12 @@ pub fn InstanceDetailPage(id: String) -> Element {
                         },
                         if action_loading() {
                             span { class: "spinner" }
-                            "Processing..."
+                            "{t!(\"dash_processing\")}"
                         } else {
-                            "Reset Password"
+                            "{t!(\"dash_reset_password_btn\")}"
                         }
                     }
-                    button { class: "btn-primary", onclick: on_console, "Open Console (VNC)" }
+                    button { class: "btn-primary", onclick: on_console, "{t!(\"dash_open_console_btn\")}" }
                 }
             }
         }
@@ -835,7 +836,7 @@ pub fn TicketsPage() -> Element {
     let selected_ticket = selected_ticket_id().and_then(|id| state.tickets.iter().find(|t| t.id == id));
 
     rsx! {
-        DashboardShell { title: "Ticket Center", active_tab: DashboardTab::Tickets,
+        DashboardShell { title: "{t!(\"dash_ticket_center\")}", active_tab: DashboardTab::Tickets,
             if let Some(ticket) = selected_ticket {
                 section { class: "panel",
                     div { class: "flex-row-between",
@@ -845,20 +846,20 @@ pub fn TicketsPage() -> Element {
                                 button {
                                     class: "btn-secondary",
                                     onclick: on_close_ticket,
-                                    "Close Ticket"
+                                    "{t!(\"dash_close_ticket\")}"
                                 }
                             }
                             button {
                                 class: "btn-secondary",
                                 onclick: move |_| selected_ticket_id.set(None),
-                                "Back to List"
+                                "{t!(\"dash_back_to_list\")}"
                             }
                         }
                     }
                     div { class: "meta-strip",
-                        span { class: "meta-item", "Category: {ticket.category}" }
-                        span { class: "meta-item", "Priority: {ticket.priority}" }
-                        span { class: "meta-item", "Status: {ticket.status}" }
+                        span { class: "meta-item", {t!("dash_category", cat: ticket.category.clone())} }
+                        span { class: "meta-item", {t!("dash_priority", prio: ticket.priority.clone())} }
+                        span { class: "meta-item", {t!("dash_status_label", status: ticket.status.clone())} }
                     }
 
                     div { class: "message-list", style: "margin: 20px 0; max-height: 400px; overflow-y: auto; padding: 10px; background: #f9f9f9; border-radius: 8px;",
@@ -873,7 +874,7 @@ pub fn TicketsPage() -> Element {
                                     p { style: "margin: 0;", "{msg.message}" }
                                     p { class: "muted x-small", style: "margin-top: 5px;",
                                         "{msg.created_at} "
-                                        if msg.sender_user_id.as_deref() == Some(ticket.user_id.as_str()) { "(我)" } else { "(客服)" }
+                                        if msg.sender_user_id.as_deref() == Some(ticket.user_id.as_str()) { "{t!(\"dash_msg_me\")}" } else { "{t!(\"dash_msg_staff\")}" }
                                     }
                                 }
                             }
@@ -884,40 +885,40 @@ pub fn TicketsPage() -> Element {
                         textarea {
                             id: "reply_message",
                             rows: "3",
-                            placeholder: "Type your reply..."
+                            placeholder: "{t!(\"dash_type_reply\")}"
                         }
                         button {
                             class: "btn-primary",
                             onclick: on_reply_ticket,
-                            "Send Reply"
+                            "{t!(\"dash_send_reply\")}"
                         }
                     }
                 }
             } else {
                 section { class: "panel",
                     div { class: "flex-row-between",
-                        h3 { "Recent Tickets" }
+                        h3 { "{t!(\"dash_recent_tickets\")}" }
                         button {
                             class: "btn-primary",
                             onclick: move |_| show_create_form.set(!show_create_form()),
-                            if show_create_form() { "Cancel" } else { "Create Ticket" }
+                            if show_create_form() { "{t!(\"dash_cancel\")}" } else { "{t!(\"dash_create_ticket\")}" }
                         }
                     }
 
                     if show_create_form() {
                         div { class: "add-mapping-form", style: "margin-top: 20px; border-top: 1px solid #eee; padding-top: 20px;",
-                            h4 { "New Support Ticket" }
+                            h4 { "{t!(\"dash_new_support_ticket\")}" }
                             div { class: "form-group",
-                                label { "Subject" }
+                                label { "{t!(\"dash_subject\")}" }
                                 input {
                                     r#type: "text",
                                     id: "ticket_subject",
-                                    placeholder: "Brief description of the issue"
+                                    placeholder: "{t!(\"dash_subject_placeholder\")}"
                                 }
                             }
                             div { class: "form-row",
                                 div { class: "form-group",
-                                    label { "Category" }
+                                    label { "{t!(\"dash_form_category\")}" }
                                     select { id: "ticket_category",
                                         option { value: "Technical", "Technical" }
                                         option { value: "Billing", "Billing" }
@@ -928,7 +929,7 @@ pub fn TicketsPage() -> Element {
                                     }
                                 }
                                 div { class: "form-group",
-                                    label { "Priority" }
+                                    label { "{t!(\"dash_form_priority\")}" }
                                     select { id: "ticket_priority",
                                         option { value: "Low", "Low" }
                                         option { value: "Medium", "Medium" }
@@ -938,17 +939,17 @@ pub fn TicketsPage() -> Element {
                                 }
                             }
                             div { class: "form-group",
-                                label { "Message" }
+                                label { "{t!(\"dash_message\")}" }
                                 textarea {
                                     id: "ticket_message",
                                     rows: "5",
-                                    placeholder: "Please provide details about your request..."
+                                    placeholder: "{t!(\"dash_message_placeholder\")}"
                                 }
                             }
                             button {
                                 class: "btn-primary",
                                 onclick: on_create_ticket,
-                                "Submit Ticket"
+                                "{t!(\"dash_submit_ticket\")}"
                             }
                         }
                     }
@@ -956,18 +957,18 @@ pub fn TicketsPage() -> Element {
                     table {
                         thead {
                             tr {
-                                th { "ID" }
-                                th { "Title" }
-                                th { "Category" }
-                                th { "Priority" }
-                                th { "Status" }
-                                th { "Action" }
+                                th { "{t!(\"dash_ticket_id\")}" }
+                                th { "{t!(\"dash_ticket_title\")}" }
+                                th { "{t!(\"dash_form_category\")}" }
+                                th { "{t!(\"dash_form_priority\")}" }
+                                th { "{t!(\"dash_status\")}" }
+                                th { "{t!(\"dash_action\")}" }
                             }
                         }
                         tbody {
                             if state.tickets.is_empty() {
                                 tr {
-                                    td { colspan: "6", "No tickets found" }
+                                    td { colspan: "6", "{t!(\"dash_no_tickets\")}" }
                                 }
                             } else {
                                 for item in &state.tickets {
@@ -990,7 +991,7 @@ pub fn TicketsPage() -> Element {
                                                         selected_ticket_id.set(Some(id.clone()));
                                                     }
                                                 },
-                                                "Details"
+                                                "{t!(\"dash_ticket_details\")}"
                                             }
                                         }
                                     }
@@ -1138,38 +1139,38 @@ pub fn BalancePage() -> Element {
     };
 
     rsx! {
-        DashboardShell { title: "Balance & Finance", active_tab: DashboardTab::Balance,
+        DashboardShell { title: "{t!(\"dash_balance_finance\")}", active_tab: DashboardTab::Balance,
             section { class: "balance-card",
                 div {
-                    p { class: "muted", "Available Balance" }
+                    p { class: "muted", "{t!(\"dash_available_balance\")}" }
                     div { class: "amount", "{balance_text}" }
                 }
                 button {
                     class: "btn-primary",
                     onclick: on_recharge,
-                    "Recharge $100 (Mock)"
+                    "{t!(\"dash_recharge_mock\")}"
                 }
             }
 
             section { class: "balance-layout",
                 article { class: "table-card",
                     div { class: "tab-strip",
-                        button { class: "tab active", "Transaction History" }
+                        button { class: "tab active", "{t!(\"dash_transaction_history\")}" }
                     }
 
                     table {
                         thead {
                             tr {
-                                th { "Date" }
-                                th { "Type" }
-                                th { "Amount" }
-                                th { "Description" }
+                                th { "{t!(\"dash_date_col\")}" }
+                                th { "{t!(\"dash_type_col\")}" }
+                                th { "{t!(\"dash_amount_col\")}" }
+                                th { "{t!(\"dash_desc_col\")}" }
                             }
                         }
                         tbody {
                             if state.balance_transactions.is_empty() {
                                 tr {
-                                    td { colspan: "4", "No transactions found" }
+                                    td { colspan: "4", "{t!(\"dash_no_transactions\")}" }
                                 }
                             } else {
                                 for tx in &state.balance_transactions {
@@ -1192,23 +1193,23 @@ pub fn BalancePage() -> Element {
 
                 article { class: "table-card",
                     div { class: "tab-strip",
-                        button { class: "tab active", "Invoice Records" }
+                        button { class: "tab active", "{t!(\"dash_invoice_records\")}" }
                     }
 
                     table {
                         thead {
                             tr {
                                 th { "ID" }
-                                th { "Amount" }
-                                th { "Status" }
-                                th { "Due At" }
+                                th { "{t!(\"dash_amount_col\")}" }
+                                th { "{t!(\"dash_status\")}" }
+                                th { "{t!(\"dash_due_at_col\")}" }
                                 th { "" }
                             }
                         }
                         tbody {
                             if state.invoices.is_empty() {
                                 tr {
-                                    td { colspan: "5", "No invoices found" }
+                                    td { colspan: "5", "{t!(\"dash_no_invoices\")}" }
                                 }
                             } else {
                                 for (item , invoice_id) in invoice_rows.iter().cloned() {
@@ -1243,7 +1244,7 @@ pub fn BalancePage() -> Element {
                                                         selected_invoice_id.set(Some(invoice_id.clone()));
                                                     }
                                                 },
-                                                "Details"
+                                                "{t!(\"dash_ticket_details\")}"
                                             }
                                         }
                                     }
@@ -1278,7 +1279,7 @@ pub fn BalancePage() -> Element {
                         onclick: move |event| event.stop_propagation(),
                         div { class: "modal-header",
                             div {
-                                p { class: "muted modal-kicker", "Invoice Details" }
+                                p { class: "muted modal-kicker", "{t!(\"dash_invoice_details\")}" }
                                 h3 { "{invoice.id}" }
                             }
                             button {
@@ -1294,37 +1295,37 @@ pub fn BalancePage() -> Element {
                                         modal_closing.set(false);
                                     });
                                 },
-                                "Close"
+                                "{t!(\"dash_close_ticket\")}" // reusing close translation
                             }
                         }
 
                         div { class: "detail-grid",
                             article { class: "detail-item",
-                                p { class: "muted", "Status" }
+                                p { class: "muted", "{t!(\"dash_status\")}" }
                                 span { class: invoice_pill_class(&modal_status), "{modal_status}" }
                             }
                             article { class: "detail-item",
-                                p { class: "muted", "Amount" }
+                                p { class: "muted", "{t!(\"dash_amount_col\")}" }
                                 p { class: "fact", "$ {invoice.amount}" }
                             }
                             article { class: "detail-item",
-                                p { class: "muted", "Order ID" }
+                                p { class: "muted", "{t!(\"dash_order_id\")}" }
                                 p { class: "fact", "{selected_order_id}" }
                             }
                             article { class: "detail-item",
-                                p { class: "muted", "External Payment Ref" }
+                                p { class: "muted", "{t!(\"dash_external_payment_ref\")}" }
                                 p { class: "fact", "{selected_external_payment_ref}" }
                             }
                             article { class: "detail-item",
-                                p { class: "muted", "Created At" }
+                                p { class: "muted", "{t!(\"dash_created_at_label\")}" }
                                 p { class: "fact", "{invoice.created_at}" }
                             }
                             article { class: "detail-item",
-                                p { class: "muted", "Due At" }
+                                p { class: "muted", "{t!(\"dash_due_at_col\")}" }
                                 p { class: "fact", "{invoice.due_at}" }
                             }
                             article { class: "detail-item",
-                                p { class: "muted", "Paid At" }
+                                p { class: "muted", "{t!(\"dash_paid_at\")}" }
                                 p { class: "fact", "{selected_paid_at}" }
                             }
                         }
@@ -1336,21 +1337,21 @@ pub fn BalancePage() -> Element {
                                     disabled: *payment_loading.read(),
                                     onclick: on_repay,
                                     if *payment_loading.read() {
-                                        "Preparing checkout..."
+                                        "{t!(\"dash_preparing_checkout\")}"
                                     } else {
-                                        "Pay Again"
+                                        "{t!(\"dash_pay_again\")}"
                                     }
                                 }
                             } else if modal_status == "expired" {
                                 p { class: "notice",
-                                    "This invoice is expired and can no longer be paid."
+                                    "{t!(\"dash_invoice_expired\")}"
                                 }
                             } else if modal_status == "paid" {
-                                p { class: "notice", "This invoice has already been paid." }
+                                p { class: "notice", "{t!(\"dash_invoice_paid\")}" }
                             }
 
                             p { class: "muted modal-note",
-                                "This invoice can be repaid until 24 hours after creation, subject to inventory availability."
+                                "{t!(\"dash_invoice_note\")}"
                             }
                         }
                     }
@@ -1421,9 +1422,10 @@ fn invoice_pill_class(status: &str) -> &'static str {
 }
 
 #[component]
-pub fn DashboardShell(title: &'static str, active_tab: DashboardTab, children: Element) -> Element {
+pub fn DashboardShell(title: String, active_tab: DashboardTab, children: Element) -> Element {
     let navigator = use_navigator();
     let mut session = use_context::<Signal<SessionState>>();
+    let _i18n = i18n();
 
     rsx! {
         div { class: "layout",
@@ -1431,30 +1433,30 @@ pub fn DashboardShell(title: &'static str, active_tab: DashboardTab, children: E
                 div { class: "logo",
                     div { class: "logo-mark", "C" }
                     div { class: "logo-text",
-                        h1 { "Cloud Store" }
-                        p { "Customer Center" }
+                        h1 { "{t!(\"app_title\")}" }
+                        p { "{t!(\"dash_customer_center\")}" }
                     }
                 }
                 nav { class: "menu",
                     Link {
                         class: if active_tab == DashboardTab::Profile { "menu-item active" } else { "menu-item" },
                         to: Route::ProfilePage {},
-                        "User Info"
+                        "{t!(\"nav_profile\")}"
                     }
                     Link {
                         class: if active_tab == DashboardTab::Services { "menu-item active" } else { "menu-item" },
                         to: Route::ServicesPage {},
-                        "My Services"
+                        "{t!(\"nav_services\")}"
                     }
                     Link {
                         class: if active_tab == DashboardTab::Tickets { "menu-item active" } else { "menu-item" },
                         to: Route::TicketsPage {},
-                        "Tickets"
+                        "{t!(\"nav_tickets\")}"
                     }
                     Link {
                         class: if active_tab == DashboardTab::Balance { "menu-item active" } else { "menu-item" },
                         to: Route::BalancePage {},
-                        "Balance"
+                        "{t!(\"nav_billing\")}"
                     }
                 }
             }
@@ -1468,7 +1470,7 @@ pub fn DashboardShell(title: &'static str, active_tab: DashboardTab, children: E
                             onclick: move |_| {
                                 navigator.push(Route::StorefrontPage {});
                             },
-                            "Store"
+                            "{t!(\"dash_store_btn\")}"
                         }
                         button {
                             class: "btn-secondary",
@@ -1483,7 +1485,7 @@ pub fn DashboardShell(title: &'static str, active_tab: DashboardTab, children: E
                                 api::clear_persisted_session();
                                 navigator.push(Route::StorefrontPage {});
                             },
-                            "Logout"
+                            "{t!(\"dash_logout_btn\")}"
                         }
                     }
                 }
@@ -1501,8 +1503,8 @@ pub fn LoginRequiredView() -> Element {
         div { class: "public-shell",
             main { class: "public-main",
                 section { class: "checkout-card",
-                    h3 { "Login Required" }
-                    p { "This page is only available after login." }
+                    h3 { "{t!(\"dash_login_required_view\")}" }
+                    p { "{t!(\"dash_page_only_after_login\")}" }
                     button {
                         class: "btn-primary",
                         onclick: move |_| {
@@ -1512,7 +1514,7 @@ pub fn LoginRequiredView() -> Element {
                                     plan: None,
                                 });
                         },
-                        "Go To Login"
+                        "{t!(\"dash_go_to_login_btn\")}"
                     }
                 }
             }
@@ -1545,7 +1547,7 @@ pub fn ConsolePage(id: String) -> Element {
     });
 
     rsx! {
-        DashboardShell { title: "Instance Console", active_tab: DashboardTab::Services,
+        DashboardShell { title: "{t!(\"dash_instance_console\")}", active_tab: DashboardTab::Services,
             div { class: "instance-detail-header",
                 button {
                     class: "btn-secondary",
@@ -1555,9 +1557,9 @@ pub fn ConsolePage(id: String) -> Element {
                                 id: id.clone(),
                             });
                     },
-                    "← Back to Instance"
+                    "{t!(\"dash_back_to_instance\")}"
                 }
-                h3 { "Interactive Console" }
+                h3 { "{t!(\"dash_interactive_console\")}" }
             }
 
             div { class: "panel",

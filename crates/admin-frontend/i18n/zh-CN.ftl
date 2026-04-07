@@ -1,0 +1,9 @@
+nav_overview = 系统概览
+nav_guests = 用户管理
+nav_instances = 实例管理
+nav_plans = 产品套餐
+nav_nodes = 节点管理
+nav_nat_leases = NAT 端口池
+nav_tickets = 工单中心
+nav_logout = 退出登录
+switch_lang = English

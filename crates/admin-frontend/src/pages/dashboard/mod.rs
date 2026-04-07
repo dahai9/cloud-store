@@ -1,5 +1,7 @@
 use crate::models::{AdminSessionState, Route};
 use dioxus::prelude::*;
+use dioxus_i18n::prelude::i18n;
+use dioxus_i18n::t;
 
 mod guests;
 mod instances;
@@ -20,6 +22,7 @@ pub use tickets::TicketsPage;
 #[component]
 pub fn DashboardLayout() -> Element {
     let mut session = use_context::<Signal<AdminSessionState>>();
+    let _i18n = i18n();
 
     // Redirect if not logged in
     if session().token.is_none() {
@@ -65,43 +68,43 @@ pub fn DashboardLayout() -> Element {
                         class: "menu-item",
                         active_class: "active",
                         to: Route::OverviewPage {},
-                        "Overview"
+                        "{t!(\"nav_overview\")}"
                     }
                     Link {
                         class: "menu-item",
                         active_class: "active",
                         to: Route::NodesPage {},
-                        "Nodes"
+                        "{t!(\"nav_nodes\")}"
                     }
                     Link {
                         class: "menu-item",
                         active_class: "active",
                         to: Route::NatPortLeasesPage {},
-                        "NAT Leases"
+                        "{t!(\"nav_nat_leases\")}"
                     }
                     Link {
                         class: "menu-item",
                         active_class: "active",
                         to: Route::InstancesPage {},
-                        "Instances"
+                        "{t!(\"nav_instances\")}"
                     }
                     Link {
                         class: "menu-item",
                         active_class: "active",
                         to: Route::PlansPage {},
-                        "Products"
+                        "{t!(\"nav_plans\")}"
                     }
                     Link {
                         class: "menu-item",
                         active_class: "active",
                         to: Route::GuestsPage {},
-                        "Guests"
+                        "{t!(\"nav_guests\")}"
                     }
                     Link {
                         class: "menu-item",
                         active_class: "active",
                         to: Route::TicketsPage {},
-                        "Tickets"
+                        "{t!(\"nav_tickets\")}"
                     }
                 }
             }
@@ -121,7 +124,7 @@ pub fn DashboardLayout() -> Element {
                             href: "http://127.0.0.1:8080",
                             "Store"
                         }
-                        button { class: "btn-secondary", onclick: logout, "Logout" }
+                        button { class: "btn-secondary", onclick: logout, "{t!(\"nav_logout\")}" }
                     }
                 }
 
