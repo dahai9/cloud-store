@@ -87,6 +87,8 @@ plans_edit_modal_title = 编辑套餐: { $name }
 plans_add_success = 套餐创建成功
 plans_update_success = 套餐更新成功
 plans_refresh_success = 套餐列表已刷新
+publish = 发布
+unpublish = 下架
 
 # Instance Page
 instances_title = 实例管理

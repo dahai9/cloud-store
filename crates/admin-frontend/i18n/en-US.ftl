@@ -87,7 +87,8 @@ plans_edit_modal_title = Edit Plan: { $name }
 plans_add_success = Plan created successfully.
 plans_update_success = Plan updated successfully.
 plans_refresh_success = Plan list refreshed.
-
+publish = Publish
+unpublish = Unpublish
 # Instance Page
 instances_title = Instance Management
 instances_search_placeholder = Search Instance ID, User ID...

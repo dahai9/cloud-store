@@ -392,9 +392,9 @@ pub fn PlansPage() -> Element {
                                             move |_| toggle_active(pid.clone(), next)
                                         },
                                         if plan.active {
-                                            "{t!(\"delete\")}" // Usually "下架" in CN
+                                            "{t!(\"unpublish\")}" // Usually "下架" in CN
                                         } else {
-                                            "{t!(\"submit\")}" // Usually "上架" in CN
+                                            "{t!(\"publish\")}" // Usually "上架" in CN
                                         }
 
                                     }
