@@ -222,6 +222,10 @@ fn build_guest_router(app_state: AppState) -> Router {
             "/api/user/balance/recharge",
             post(payment::paypal::create_recharge_paypal),
         )
+        .route(
+            "/api/user/balance/refund/{order_id}",
+            post(billing::refund_failed_order),
+        )
         .route("/api/invoices", get(billing::list_invoices))
         .route("/api/instances", get(instances::list_instances))
         .route("/api/instances/{id}", get(instances::get_instance))

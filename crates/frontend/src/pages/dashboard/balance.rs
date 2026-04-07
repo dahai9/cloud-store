@@ -176,6 +176,28 @@ pub fn BalancePage() -> Element {
         });
     };
 
+    let on_refund = move |order_id: String| {
+        let api_base = session.peek().api_base.clone();
+        let token = session.peek().token.clone().unwrap_or_default();
+        let mut session = session;
+
+        spawn(async move {
+            match api::refund_failed_order(&api_base, &token, &order_id).await {
+                Ok(_) => {
+                    // Refresh balance and transactions
+                    if let Ok(bundle) = api::load_authenticated_bundle(&api_base, &token).await {
+                        let mut s = session.write();
+                        s.balance = bundle.balance;
+                        s.balance_transactions = bundle.balance_transactions;
+                    }
+                }
+                Err(e) => {
+                    session.write().error = Some(e);
+                }
+            }
+        });
+    };
+
     rsx! {
             DashboardShell { title: "{t!(\"dash_balance_finance\")}", active_tab: DashboardTab::Balance,
                 div {
@@ -233,12 +255,14 @@ pub fn BalancePage() -> Element {
                                     th { "{t!(\"dash_type_col\")}" }
                                     th { "{t!(\"dash_amount_col\")}" }
                                     th { "{t!(\"dash_desc_col\")}" }
+                                    th { "{t!(\"dash_status\")}" }
+                                    th { "" }
                                 }
                             }
                             tbody {
                                 if state.balance_transactions.is_empty() {
                                     tr {
-                                        td { colspan: "4", "{t!(\"dash_no_transactions\")}" }
+                                        td { colspan: "6", "{t!(\"dash_no_transactions\")}" }
                                     }
                                 } else {
                                     for tx in &state.balance_transactions {
@@ -252,6 +276,32 @@ pub fn BalancePage() -> Element {
                                                 }
                                             }
                                             td { "{tx.description}" }
+                                            td {
+                                                if let Some(status) = &tx.order_status {
+                                                    span { class: format!("pill {}", match status.as_str() {
+                                                        "active" => "status-running",
+                                                        "failed" => "status-deleted",
+                                                        "refunded" => "status-stopped",
+                                                        _ => "status-starting",
+                                                    }), "{status}" }
+                                                } else {
+                                                    "-"
+                                                }
+                                            }
+                                            td {
+                                                if tx.r#type == "purchase" && tx.order_status.as_deref() == Some("failed") {
+                                                    if let Some(order_id) = &tx.order_id {
+                                                        button {
+                                                            class: "btn-secondary btn-sm",
+                                                            onclick: {
+                                                                let oid = order_id.clone();
+                                                                move |_| on_refund(oid.clone())
+                                                            },
+                                                            "{t!(\"dash_refund_btn\")}"
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }

@@ -205,6 +205,8 @@ pub struct BalanceTransactionItem {
     pub r#type: String,
     pub description: String,
     pub created_at: String,
+    pub order_id: Option<String>,
+    pub order_status: Option<String>,
 }
 
 #[derive(Clone, Serialize)]

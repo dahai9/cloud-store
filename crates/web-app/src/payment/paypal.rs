@@ -217,12 +217,13 @@ async fn create_balance_checkout_internal(
     let tx_id = Uuid::new_v4().to_string();
     let description = format!("Purchase {} ({})", plan.name, plan.code);
     sqlx::query(
-        "INSERT INTO balance_transactions (id, user_id, amount, type, description) VALUES (?, ?, ?, 'purchase', ?)"
+        "INSERT INTO balance_transactions (id, user_id, amount, type, description, order_id) VALUES (?, ?, ?, 'purchase', ?, ?)"
     )
     .bind(&tx_id)
     .bind(&user.id)
     .bind(-amount_f)
     .bind(&description)
+    .bind(order_id.to_string())
     .execute(&mut *tx)
     .await
     .map_err(|err| {

@@ -6,6 +6,7 @@ use axum::http::StatusCode;
 use axum::Json;
 use serde::Serialize;
 use tracing::error;
+use uuid::Uuid;
 
 #[derive(Serialize)]
 pub struct PublicPlanItem {
@@ -115,6 +116,8 @@ pub struct BalanceTransactionItem {
     pub r#type: String,
     pub description: String,
     pub created_at: String,
+    pub order_id: Option<String>,
+    pub order_status: Option<String>,
 }
 
 pub async fn get_balance(
@@ -142,8 +145,12 @@ pub async fn list_balance_transactions(
 ) -> Result<Json<Vec<BalanceTransactionItem>>, (StatusCode, &'static str)> {
     let user = auth::require_user(&headers, &state).await?;
 
-    let rows = sqlx::query_as::<_, (String, String, String, String, String)>(
-        "SELECT id, CAST(amount AS TEXT), type, description, created_at FROM balance_transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT 100",
+    let rows = sqlx::query_as::<_, (String, String, String, String, String, Option<String>, Option<String>)>(
+        "SELECT t.id, CAST(t.amount AS TEXT), t.type, t.description, t.created_at, t.order_id, o.status
+         FROM balance_transactions t
+         LEFT JOIN orders o ON t.order_id = o.id
+         WHERE t.user_id = ?
+         ORDER BY t.created_at DESC LIMIT 100",
     )
     .bind(&user.id)
     .fetch_all(&state.db)
@@ -156,17 +163,102 @@ pub async fn list_balance_transactions(
     let items = rows
         .into_iter()
         .map(
-            |(id, amount, r#type, description, created_at)| BalanceTransactionItem {
-                id,
-                amount,
-                r#type,
-                description,
-                created_at,
+            |(id, amount, r#type, description, created_at, order_id, order_status)| {
+                BalanceTransactionItem {
+                    id,
+                    amount,
+                    r#type,
+                    description,
+                    created_at,
+                    order_id,
+                    order_status,
+                }
             },
         )
         .collect();
 
     Ok(Json(items))
+}
+
+pub async fn refund_failed_order(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::extract::Path(order_id): axum::extract::Path<String>,
+) -> Result<StatusCode, (StatusCode, &'static str)> {
+    let user = auth::require_user(&headers, &state).await?;
+
+    let mut tx = state.db.begin().await.map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to start transaction",
+        )
+    })?;
+
+    // Check if order exists, belongs to user, and is failed
+    let order = sqlx::query_as::<_, (String, String, f64)>(
+        "SELECT id, status, CAST(total_amount AS REAL) FROM orders WHERE id = ? AND user_id = ?",
+    )
+    .bind(&order_id)
+    .bind(&user.id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?
+    .ok_or((StatusCode::NOT_FOUND, "order not found"))?;
+
+    let (_, status, amount) = order;
+
+    if status != "failed" {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "only failed orders can be refunded",
+        ));
+    }
+
+    // Add back to balance
+    sqlx::query("UPDATE users SET balance = balance + ? WHERE id = ?")
+        .bind(amount)
+        .bind(&user.id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to update balance",
+            )
+        })?;
+
+    // Log transaction
+    let tx_id = Uuid::new_v4().to_string();
+    let description = format!("Refund for failed order {}", order_id);
+    sqlx::query(
+        "INSERT INTO balance_transactions (id, user_id, amount, type, description, order_id) VALUES (?, ?, ?, 'refund', ?, ?)"
+    )
+    .bind(&tx_id)
+    .bind(&user.id)
+    .bind(amount)
+    .bind(&description)
+    .bind(&order_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to log transaction"))?;
+
+    // Update order status to refunded
+    sqlx::query(
+        "UPDATE orders SET status = 'refunded', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+    )
+    .bind(&order_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to update order"))?;
+
+    tx.commit().await.map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to commit transaction",
+        )
+    })?;
+
+    Ok(StatusCode::OK)
 }
 
 pub async fn list_invoices(

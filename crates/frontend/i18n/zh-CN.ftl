@@ -184,6 +184,7 @@ dash_type_col = 类型
 dash_amount_col = 金额
 dash_desc_col = 描述
 dash_no_transactions = 暂无交易记录
+dash_refund_btn = 退款
 dash_invoice_records = 账单记录
 dash_due_at_col = 到期时间
 dash_no_invoices = 暂无账单

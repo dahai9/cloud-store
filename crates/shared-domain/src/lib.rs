@@ -20,6 +20,7 @@ pub enum OrderStatus {
     Active,
     Failed,
     Cancelled,
+    Refunded,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -184,6 +184,7 @@ dash_type_col = Type
 dash_amount_col = Amount
 dash_desc_col = Description
 dash_no_transactions = No transactions found
+dash_refund_btn = Refund
 dash_invoice_records = Invoice Records
 dash_due_at_col = Due At
 dash_no_invoices = No invoices found

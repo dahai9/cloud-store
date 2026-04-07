@@ -135,6 +135,7 @@ pub fn InstanceDetailPage(id: String) -> Element {
     let mut metrics_history = use_signal(Vec::<crate::models::InstanceMetrics>::new);
     let mut nat_mappings = use_signal(Vec::<crate::models::NatMappingItem>::new);
     let mut error = use_signal(|| None::<String>);
+    let mut nat_error = use_signal(|| None::<String>);
     let mut action_loading = use_signal(|| false);
     let mut show_password = use_signal(|| false);
 
@@ -275,13 +276,14 @@ pub fn InstanceDetailPage(id: String) -> Element {
             let api_base = api_base.clone();
             let token = token.clone();
             spawn(async move {
+                nat_error.set(None);
                 match api::create_nat_mapping(&api_base, &token, &id, &payload).await {
                     Ok(new_mapping) => {
                         let mut current = nat_mappings.peek().clone();
                         current.insert(0, new_mapping);
                         nat_mappings.set(current);
                     }
-                    Err(err) => error.set(Some(err)),
+                    Err(err) => nat_error.set(Some(err)),
                 }
             });
         }
@@ -296,13 +298,14 @@ pub fn InstanceDetailPage(id: String) -> Element {
             let api_base = api_base.clone();
             let token = token.clone();
             spawn(async move {
+                nat_error.set(None);
                 match api::remove_nat_mapping(&api_base, &token, &id, &mapping_id).await {
                     Ok(_) => {
                         let mut current = nat_mappings.peek().clone();
                         current.retain(|m| m.id != mapping_id);
                         nat_mappings.set(current);
                     }
-                    Err(err) => error.set(Some(err)),
+                    Err(err) => nat_error.set(Some(err)),
                 }
             });
         }
@@ -458,6 +461,9 @@ pub fn InstanceDetailPage(id: String) -> Element {
                             p { {t!("dash_public_ip_info", ip: pool.ip.clone(), range: pool.range.clone())} }
                         }
                     }
+                }
+                if let Some(err) = nat_error() {
+                    p { class: "notice error-notice", "{err}" }
                 }
                 div { class: "nat-mappings-container",
                     table {

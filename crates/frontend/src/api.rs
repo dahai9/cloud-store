@@ -726,6 +726,28 @@ pub async fn remove_nat_mapping(
     Ok(())
 }
 
+pub async fn refund_failed_order(
+    api_base: &str,
+    token: &str,
+    order_id: &str,
+) -> Result<(), String> {
+    let client = Client::new();
+    let url = format!("{api_base}/api/user/balance/refund/{order_id}");
+    let resp = client
+        .post(&url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .send()
+        .await
+        .map_err(|e| format!("refund request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        let err_text = resp.text().await.unwrap_or_default();
+        return Err(format!("refund failed: {err_text}"));
+    }
+
+    Ok(())
+}
+
 fn load_persisted_session() -> Option<(String, AuthProfileResponse)> {
     #[cfg(target_arch = "wasm32")]
     {
