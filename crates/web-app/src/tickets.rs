@@ -1,14 +1,24 @@
 use crate::auth;
 use crate::AppState;
 use axum::extract::Path;
+use axum::extract::Query;
 use axum::extract::State;
 use axum::http::HeaderMap;
 use axum::http::StatusCode;
+use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::Json;
+use async_stream::stream;
+use futures_util::stream::Stream;
+use std::convert::Infallible;
 use serde::Deserialize;
 use serde::Serialize;
 use tracing::error;
 use uuid::Uuid;
+
+#[derive(Deserialize)]
+pub struct SseQuery {
+    pub token: String,
+}
 
 #[derive(Serialize)]
 pub struct TicketItem {
@@ -159,12 +169,12 @@ pub async fn list_tickets(
     Ok(Json(items))
 }
 
-pub async fn list_ticket_messages(
+pub async fn ticket_messages_stream(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Path(ticket_id): Path<String>,
-) -> Result<Json<Vec<TicketMessageItem>>, (StatusCode, &'static str)> {
-    let user = auth::require_user(&headers, &state).await?;
+    Query(query): Query<SseQuery>,
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, (StatusCode, &'static str)> {
+    let user = auth::require_user_from_token(&query.token, &state).await?;
 
     let ticket_owner_id = sqlx::query_scalar::<_, String>(
         "SELECT user_id FROM support_tickets WHERE id = ?"
@@ -179,33 +189,93 @@ pub async fn list_ticket_messages(
         return Err((StatusCode::FORBIDDEN, "access denied"));
     }
 
-    let rows = sqlx::query_as::<_, (String, Option<String>, String, String)>(
-        "SELECT id, sender_user_id, message, created_at FROM support_messages WHERE ticket_id = ? ORDER BY created_at ASC",
-    )
-    .bind(&ticket_id)
-    .fetch_all(&state.db)
-    .await
-    .map_err(|err| {
-        error!(error = %err, ticket_id = %ticket_id, "failed to query support messages");
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to load ticket messages",
-        )
-    })?;
+    let db = state.db.clone();
+    let s = stream! {
+        let mut last_created_at = "1970-01-01 00:00:00".to_string();
 
-    let items = rows
-        .into_iter()
-        .map(
-            |(id, sender_user_id, message, created_at)| TicketMessageItem {
-                id,
-                sender_user_id,
-                message,
-                created_at,
-            },
-        )
-        .collect();
+        loop {
+            let q = "SELECT id, sender_user_id, message, created_at FROM support_messages WHERE ticket_id = ? AND created_at > ? ORDER BY created_at ASC";
+            let rows = sqlx::query_as::<_, (String, Option<String>, String, String)>(q)
+                .bind(&ticket_id)
+                .bind(&last_created_at)
+                .fetch_all(&db)
+                .await;
 
-    Ok(Json(items))
+            if let Ok(rows) = rows {
+                for (id, sender_user_id, message, created_at) in rows {
+                    let item = TicketMessageItem {
+                        id,
+                        sender_user_id,
+                        message,
+                        created_at: created_at.clone(),
+                    };
+                    
+                    last_created_at = created_at;
+
+                    if let Ok(json) = serde_json::to_string(&item) {
+                        yield Ok(Event::default().data(json));
+                    }
+                }
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        }
+    };
+
+    Ok(Sse::new(s).keep_alive(KeepAlive::default()))
+}
+
+pub async fn admin_ticket_messages_stream(
+    State(state): State<AppState>,
+    Path(ticket_id): Path<String>,
+    Query(query): Query<SseQuery>,
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, (StatusCode, &'static str)> {
+    let _ = auth::require_admin_from_token(&query.token, &state).await?;
+
+    let exists = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM support_tickets WHERE id = ?")
+        .bind(&ticket_id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
+
+    if exists == 0 {
+        return Err((StatusCode::NOT_FOUND, "ticket not found"));
+    }
+
+    let db = state.db.clone();
+    let s = stream! {
+        let mut last_created_at = "1970-01-01 00:00:00".to_string();
+
+        loop {
+            let q = "SELECT id, sender_user_id, message, created_at FROM support_messages WHERE ticket_id = ? AND created_at > ? ORDER BY created_at ASC";
+            let rows = sqlx::query_as::<_, (String, Option<String>, String, String)>(q)
+                .bind(&ticket_id)
+                .bind(&last_created_at)
+                .fetch_all(&db)
+                .await;
+
+            if let Ok(rows) = rows {
+                for (id, sender_user_id, message, created_at) in rows {
+                    let item = TicketMessageItem {
+                        id,
+                        sender_user_id,
+                        message,
+                        created_at: created_at.clone(),
+                    };
+                    
+                    last_created_at = created_at;
+
+                    if let Ok(json) = serde_json::to_string(&item) {
+                        yield Ok(Event::default().data(json));
+                    }
+                }
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        }
+    };
+
+    Ok(Sse::new(s).keep_alive(KeepAlive::default()))
 }
 
 pub async fn reply_ticket(
@@ -343,57 +413,6 @@ pub async fn admin_update_ticket_status(
     }))
 }
 
-pub async fn admin_list_ticket_messages(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(ticket_id): Path<String>,
-) -> Result<Json<Vec<TicketMessageItem>>, (StatusCode, &'static str)> {
-    let _ = auth::require_admin(&headers, &state).await?;
-
-    let exists = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM support_tickets WHERE id = ?")
-        .bind(&ticket_id)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|err| {
-            error!(error = %err, ticket_id = %ticket_id, "failed to check ticket existence");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to load ticket messages",
-            )
-        })?;
-
-    if exists == 0 {
-        return Err((StatusCode::NOT_FOUND, "ticket not found"));
-    }
-
-    let rows = sqlx::query_as::<_, (String, Option<String>, String, String)>(
-        "SELECT id, sender_user_id, message, created_at FROM support_messages WHERE ticket_id = ? ORDER BY created_at ASC",
-    )
-    .bind(&ticket_id)
-    .fetch_all(&state.db)
-    .await
-    .map_err(|err| {
-        error!(error = %err, ticket_id = %ticket_id, "failed to query support messages");
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to load ticket messages",
-        )
-    })?;
-
-    let items = rows
-        .into_iter()
-        .map(
-            |(id, sender_user_id, message, created_at)| TicketMessageItem {
-                id,
-                sender_user_id,
-                message,
-                created_at,
-            },
-        )
-        .collect();
-
-    Ok(Json(items))
-}
 
 pub async fn admin_reply_ticket(
     State(state): State<AppState>,

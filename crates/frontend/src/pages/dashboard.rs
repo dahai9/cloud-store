@@ -642,6 +642,57 @@ pub fn TicketsPage() -> Element {
     let api_base = state.api_base.clone();
     let token = state.token.clone().unwrap();
 
+    #[cfg(target_arch = "wasm32")]
+    let mut active_sse = use_signal(|| None::<web_sys::EventSource>);
+    #[cfg(not(target_arch = "wasm32"))]
+    let active_sse = use_signal(|| None::<()>);
+
+    let eff_api_base = api_base.clone();
+    let eff_token = token.clone();
+    use_effect(move || {
+        let tid = selected_ticket_id();
+        let token = eff_token.clone();
+        let api_base = eff_api_base.clone();
+
+        ticket_messages.set(vec![]);
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            if let Some(es) = active_sse.write().take() {
+                es.close();
+            }
+        }
+
+        if let Some(tid) = tid {
+            #[cfg(target_arch = "wasm32")]
+            {
+                use wasm_bindgen::closure::Closure;
+                use wasm_bindgen::JsCast;
+                use web_sys::{EventSource, MessageEvent};
+
+                let url = format!("{}/api/tickets/{}/messages?token={}", api_base, tid, token);
+                if let Ok(es) = EventSource::new(&url) {
+                    let onmessage = Closure::wrap(Box::new(move |e: MessageEvent| {
+                        if let Some(txt) = e.data().as_string() {
+                            if let Ok(msg) = serde_json::from_str::<crate::models::TicketMessageItem>(&txt) {
+                                ticket_messages.with_mut(|msgs| msgs.push(msg));
+                            }
+                        }
+                    }) as Box<dyn FnMut(MessageEvent)>);
+
+                    es.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
+                    onmessage.forget();
+                    
+                    active_sse.set(Some(es));
+                }
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let _ = (&tid, &token, &api_base, &active_sse);
+            }
+        }
+    });
+
     let on_create_ticket = {
         let api_base = api_base.clone();
         let token = token.clone();
@@ -716,8 +767,17 @@ pub fn TicketsPage() -> Element {
                     spawn(async move {
                         match api::reply_ticket(&api_base, &token, &ticket_id, &message).await {
                             Ok(_) => {
-                                if let Ok(msgs) = api::fetch_ticket_messages(&api_base, &token, &ticket_id).await {
-                                    ticket_messages.set(msgs);
+                                // SSE will automatically fetch the new message.
+                                // Just clear the input.
+                                #[cfg(target_arch = "wasm32")]
+                                {
+                                    let window = web_sys::window().unwrap();
+                                    let document = window.document().unwrap();
+                                    if let Some(el) = document.get_element_by_id("reply_message") {
+                                        if let Ok(ta) = el.dyn_into::<web_sys::HtmlTextAreaElement>() {
+                                            ta.set_value("");
+                                        }
+                                    }
                                 }
                             }
                             Err(e) => {
@@ -912,24 +972,8 @@ pub fn TicketsPage() -> Element {
                                                 class: "btn-secondary btn-sm",
                                                 onclick: {
                                                     let id = item.id.clone();
-                                                    let api_base = api_base.clone();
-                                                    let token = token.clone();
                                                     move |_| {
-                                                        let id_val = id.clone();
-                                                        let api_base = api_base.clone();
-                                                        let token = token.clone();
-                                                        spawn(async move {
-                                                            match api::fetch_ticket_messages(&api_base, &token, &id_val).await {
-                                                                Ok(msgs) => {
-                                                                    ticket_messages.set(msgs);
-                                                                    selected_ticket_id.set(Some(id_val));
-                                                                }
-                                                                Err(e) => {
-                                                                    let mut s = session.write();
-                                                                    s.error = Some(e);
-                                                                }
-                                                            }
-                                                        });
+                                                        selected_ticket_id.set(Some(id.clone()));
                                                     }
                                                 },
                                                 "Details"

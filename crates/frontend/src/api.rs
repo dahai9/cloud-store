@@ -483,29 +483,6 @@ pub async fn create_ticket(
         .map_err(|e| format!("failed to parse created ticket: {e}"))
 }
 
-pub async fn fetch_ticket_messages(
-    api_base: &str,
-    token: &str,
-    ticket_id: &str,
-) -> Result<Vec<crate::models::TicketMessageItem>, String> {
-    let client = Client::new();
-    let url = format!("{api_base}/api/tickets/{ticket_id}/messages");
-    let resp = client
-        .get(&url)
-        .header("Authorization", &format!("Bearer {token}"))
-        .send()
-        .await
-        .map_err(|e| format!("failed to load ticket messages: {e}"))?;
-
-    if !resp.status().is_success() {
-        return Err(format!("messages request failed: {}", resp.status()));
-    }
-
-    resp.json::<Vec<crate::models::TicketMessageItem>>()
-        .await
-        .map_err(|e| format!("failed to parse messages: {e}"))
-}
-
 pub async fn reply_ticket(
     api_base: &str,
     token: &str,

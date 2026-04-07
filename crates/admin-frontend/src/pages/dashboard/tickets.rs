@@ -14,6 +14,61 @@ pub fn TicketsPage() -> Element {
     let api_base = state.api_base.clone();
     let token = state.token.clone().unwrap_or_default();
 
+    #[cfg(target_arch = "wasm32")]
+    let mut active_sse = use_signal(|| None::<web_sys::EventSource>);
+    #[cfg(not(target_arch = "wasm32"))]
+    let active_sse = use_signal(|| None::<()>);
+
+    let eff_api_base = api_base.clone();
+    let eff_token = token.clone();
+    use_effect(move || {
+        let tid = selected_ticket_id();
+        let token = eff_token.clone();
+        let api_base = eff_api_base.clone();
+
+        ticket_messages.set(vec![]);
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            if let Some(es) = active_sse.write().take() {
+                es.close();
+            }
+        }
+
+        if tid.is_empty() {
+            #[cfg(not(target_arch = "wasm32"))]
+            let _ = (&token, &api_base, &active_sse);
+            return;
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            use wasm_bindgen::closure::Closure;
+            use wasm_bindgen::JsCast;
+            use web_sys::{EventSource, MessageEvent};
+
+            let url = format!("{}/api/admin/tickets/{}/messages?token={}", api_base, tid, token);
+            if let Ok(es) = EventSource::new(&url) {
+                let onmessage = Closure::wrap(Box::new(move |e: MessageEvent| {
+                    if let Some(txt) = e.data().as_string() {
+                        if let Ok(msg) = serde_json::from_str::<crate::models::TicketMessageItem>(&txt) {
+                            ticket_messages.with_mut(|msgs| msgs.push(msg));
+                        }
+                    }
+                }) as Box<dyn FnMut(MessageEvent)>);
+
+                es.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
+                onmessage.forget();
+                
+                active_sse.set(Some(es));
+            }
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = (&token, &api_base, &active_sse);
+        }
+    });
+
     let refresh_tickets = {
         let api_base = api_base.clone();
         let token = token.clone();
@@ -74,9 +129,7 @@ pub fn TicketsPage() -> Element {
                 if let Ok(tickets) = api::get_tickets(&api_base, &token).await {
                     session.write().tickets = tickets;
                 }
-                if let Ok(msgs) = api::get_ticket_messages(&api_base, &token, &ticket_id).await {
-                    ticket_messages.set(msgs);
-                }
+                // SSE will automatically fetch the new message.
                 session.write().loading = false;
             });
         }
@@ -221,25 +274,9 @@ pub fn TicketsPage() -> Element {
                                                 class: "btn-secondary btn-sm",
                                                 onclick: {
                                                     let t = ticket.clone();
-                                                    let api_base = api_base.clone();
-                                                    let token = token.clone();
                                                     move |_| {
-                                                        let tid = t.id.clone();
-                                                        let status = t.status.clone();
-                                                        let api_base = api_base.clone();
-                                                        let token = token.clone();
-                                                        spawn(async move {
-                                                            match api::get_ticket_messages(&api_base, &token, &tid).await {
-                                                                Ok(msgs) => {
-                                                                    ticket_messages.set(msgs);
-                                                                    selected_ticket_id.set(tid);
-                                                                    selected_ticket_status.set(status);
-                                                                }
-                                                                Err(e) => {
-                                                                    session.write().error = Some(format!("加载消息失败: {e}"));
-                                                                }
-                                                            }
-                                                        });
+                                                        selected_ticket_id.set(t.id.clone());
+                                                        selected_ticket_status.set(t.status.clone());
                                                     }
                                                 },
                                                 "查看详情"

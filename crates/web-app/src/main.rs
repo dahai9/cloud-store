@@ -203,7 +203,7 @@ fn build_guest_router(app_state: AppState) -> Router {
         .route("/api/tickets", post(tickets::create_ticket))
         .route(
             "/api/tickets/{ticket_id}/messages",
-            get(tickets::list_ticket_messages),
+            get(tickets::ticket_messages_stream),
         )
         .route(
             "/api/tickets/{ticket_id}/reply",
@@ -289,7 +289,7 @@ fn build_admin_router(app_state: AppState) -> Router {
         )
         .route(
             "/api/admin/tickets/{ticket_id}/messages",
-            get(tickets::admin_list_ticket_messages),
+            get(tickets::admin_ticket_messages_stream),
         )
         .route(
             "/api/admin/tickets/{ticket_id}/reply",

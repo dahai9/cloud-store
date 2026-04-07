@@ -242,11 +242,25 @@ pub async fn require_admin(
     let user = require_auth(headers, state).await?;
 
     if user.role != "admin" {
-        return Err((StatusCode::FORBIDDEN, "admin role required"));
+        return Err((StatusCode::FORBIDDEN, "admin access required"));
     }
 
     Ok(user)
 }
+
+pub async fn require_admin_from_token(
+    token: &str,
+    state: &AppState,
+) -> Result<AuthUser, (StatusCode, &'static str)> {
+    let user = require_user_from_token(token, state).await?;
+
+    if user.role != "admin" {
+        return Err((StatusCode::FORBIDDEN, "admin access required"));
+    }
+
+    Ok(user)
+}
+
 
 pub async fn ensure_single_admin(
     state: &AppState,

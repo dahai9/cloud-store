@@ -425,29 +425,6 @@ pub async fn reply_ticket(
     Ok(())
 }
 
-pub async fn get_ticket_messages(
-    api_base: &str,
-    token: &str,
-    ticket_id: &str,
-) -> Result<Vec<crate::models::TicketMessageItem>, String> {
-    let client = Client::new();
-    let url = format!("{api_base}/api/admin/tickets/{ticket_id}/messages");
-    let resp = client
-        .get(&url)
-        .header("Authorization", &format!("Bearer {token}"))
-        .send()
-        .await
-        .map_err(|e| format!("load messages failed: {e}"))?;
-
-    if !resp.status().is_success() {
-        return Err(format!("load messages failed: {}", resp.status()));
-    }
-
-    resp.json::<Vec<crate::models::TicketMessageItem>>()
-        .await
-        .map_err(|e| format!("parse messages failed: {e}"))
-}
-
 pub async fn close_ticket(
     api_base: &str,
     token: &str,
