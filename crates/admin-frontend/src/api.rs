@@ -194,6 +194,7 @@ pub async fn get_instances(api_base: &str, token: &str) -> Result<Vec<InstanceIt
         .map_err(|e| format!("Failed to parse instances: {e}"))
 }
 
+#[allow(dead_code)]
 pub async fn create_instance(
     api_base: &str,
     token: &str,
@@ -214,6 +215,7 @@ pub async fn create_instance(
     Ok(())
 }
 
+#[allow(dead_code)]
 pub async fn delete_instance(
     api_base: &str,
     token: &str,
@@ -361,6 +363,7 @@ pub async fn get_tickets(api_base: &str, token: &str) -> Result<Vec<TicketItem>,
         .map_err(|e| format!("Failed to parse tickets: {e}"))
 }
 
+#[allow(dead_code)]
 pub async fn create_ticket(
     api_base: &str,
     token: &str,

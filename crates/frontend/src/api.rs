@@ -458,6 +458,7 @@ async fn fetch_tickets(api_base: &str, token: &str) -> Result<Vec<TicketItem>, S
         .map_err(|e| format!("failed to parse tickets response: {e}"))
 }
 
+#[allow(dead_code)]
 pub async fn create_ticket(
     api_base: &str,
     token: &str,
@@ -483,6 +484,7 @@ pub async fn create_ticket(
         .map_err(|e| format!("failed to parse created ticket: {e}"))
 }
 
+#[allow(dead_code)]
 pub async fn reply_ticket(
     api_base: &str,
     token: &str,

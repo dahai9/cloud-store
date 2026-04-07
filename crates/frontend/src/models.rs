@@ -202,6 +202,7 @@ pub struct BalanceTransactionItem {
 }
 
 #[derive(Clone, Serialize)]
+#[allow(dead_code)]
 pub struct CreateTicketRequest {
     pub subject: String,
     pub category: String,

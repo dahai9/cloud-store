@@ -114,7 +114,6 @@ pub struct GuestUpdateRequest {
 pub struct AdminInstanceCreateRequest {
     pub user_id: String,
     pub plan_id: String,
-    pub node_id: Option<String>,
 }
 
 #[derive(Deserialize)]

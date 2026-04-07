@@ -176,6 +176,7 @@ pub struct GuestUpdateRequest {
 }
 
 #[derive(Clone, Serialize)]
+#[allow(dead_code)]
 pub struct AdminInstanceCreateRequest {
     pub user_id: String,
     pub plan_id: String,
@@ -183,11 +184,13 @@ pub struct AdminInstanceCreateRequest {
 }
 
 #[derive(Clone, Serialize)]
+#[allow(dead_code)]
 pub struct AdminInstanceDeleteRequest {
     pub refund_amount: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
+#[allow(dead_code)]
 pub struct AdminTicketCreateRequest {
     pub user_id: String,
     pub category: String,
