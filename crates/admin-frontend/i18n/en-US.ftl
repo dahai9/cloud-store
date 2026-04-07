@@ -162,6 +162,25 @@ tickets_detail_close_btn = Close Ticket
 tickets_reply_success = Reply sent successfully.
 tickets_close_success = Ticket closed successfully.
 
+# Dedicated keys for TicketsPage
+tickets_detail_title = Ticket Details
+tickets_close_btn = Close Ticket
+back_to_list = Back to List
+tickets_table_category = Category
+tickets_priority_label = Priority
+tickets_manage_user_btn = Manage User
+tickets_msg_user = (User)
+tickets_msg_admin = (Admin)
+tickets_admin_actions_title = Admin Actions
+tickets_update_status_label = Update Status
+tickets_status_open = open
+tickets_status_in_progress = in progress
+tickets_status_resolved = resolved
+tickets_status_closed = closed
+tickets_reply_label = Reply Message
+tickets_reply_placeholder = Enter your reply...
+tickets_view_detail_btn = View Detail
+
 plans_form_max_inv_hint = Max Inventory (leave empty for unlimited)
 plans_sold_max_label = Sold/Max
 plans_unlimited = unlimited

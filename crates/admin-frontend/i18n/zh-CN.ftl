@@ -162,6 +162,25 @@ tickets_detail_close_btn = 关闭工单
 tickets_reply_success = 回复成功
 tickets_close_success = 工单已关闭
 
+# Dedicated keys for TicketsPage
+tickets_detail_title = 工单详情
+tickets_close_btn = 关闭工单
+back_to_list = 返回列表
+tickets_table_category = 分类
+tickets_priority_label = 优先级
+tickets_manage_user_btn = 管理用户
+tickets_msg_user = (用户)
+tickets_msg_admin = (管理员)
+tickets_admin_actions_title = 管理操作
+tickets_update_status_label = 修改状态
+tickets_status_open = 开启
+tickets_status_in_progress = 处理中
+tickets_status_resolved = 已解决
+tickets_status_closed = 已关闭
+tickets_reply_label = 回复内容
+tickets_reply_placeholder = 输入回复内容...
+tickets_view_detail_btn = 查看详情
+
 plans_form_max_inv_hint = 库存上限（留空表示不限）
 plans_sold_max_label = 已售/上限
 plans_unlimited = 不限
