@@ -186,11 +186,15 @@ async fn create_balance_checkout_internal(
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
 
     // Check balance
-    let current_balance = sqlx::query_scalar::<_, f64>("SELECT balance FROM users WHERE id = ?")
-        .bind(&user.id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to check balance"))?;
+    let current_balance =
+        sqlx::query_scalar::<_, f64>("SELECT CAST(balance AS REAL) FROM users WHERE id = ?")
+            .bind(&user.id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to check balance: {}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR, "failed to check balance")
+            })?;
 
     if current_balance < amount_f {
         return Err((StatusCode::PAYMENT_REQUIRED, "insufficient balance"));
