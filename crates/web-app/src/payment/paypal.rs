@@ -554,11 +554,16 @@ fn build_paypal_create_order_request(
 ) -> PaypalCheckoutRequest {
     let return_url = format!("{}/api/payment/paypal/return", state.paypal_return_base_url);
     let cancel_url = format!("{}/api/payment/paypal/cancel", state.paypal_return_base_url);
+    let ref_id = if order_id.is_empty() {
+        invoice_id
+    } else {
+        order_id
+    };
     let payload = json!({
         "intent": "CAPTURE",
         "purchase_units": [{
-            "reference_id": order_id,
-            "custom_id": order_id,
+            "reference_id": ref_id,
+            "custom_id": ref_id,
             "invoice_id": invoice_id,
             "description": format!("{} ({})", plan_name, plan_code),
             "amount": {

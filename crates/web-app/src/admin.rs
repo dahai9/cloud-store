@@ -3,6 +3,7 @@ use crate::AppState;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
+use provider_adapter::ComputeProvider;
 use serde::{Deserialize, Serialize};
 use tracing::{error, info};
 
@@ -536,9 +537,13 @@ pub async fn admin_delete_instance(
 ) -> Result<StatusCode, (StatusCode, &'static str)> {
     let _ = auth::require_admin(&headers, &state).await?;
 
-    // Get instance info
-    let instance = sqlx::query_as::<_, (String, String, String)>(
-        "SELECT id, user_id, status FROM instances WHERE id = ? LIMIT 1",
+    // Get instance and plan info including node connection details
+    let instance = sqlx::query_as::<_, (String, String, String, Option<String>, String, Option<String>, i64, i64)>(
+        "SELECT i.id, i.user_id, i.status, i.provider_instance_id, n.api_endpoint, n.api_token, p.memory_mb, p.storage_gb
+         FROM instances i
+         JOIN nodes n ON i.node_id = n.id
+         JOIN nat_plans p ON i.plan_id = p.id
+         WHERE i.id = ? LIMIT 1",
     )
     .bind(&instance_id)
     .fetch_optional(&state.db)
@@ -546,15 +551,37 @@ pub async fn admin_delete_instance(
     .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?
     .ok_or((StatusCode::NOT_FOUND, "instance not found"))?;
 
-    if instance.2 == "deleted" {
+    let user_id = instance.1;
+    let status = instance.2;
+    let provider_instance_id = instance.3;
+    let node_endpoint = instance.4;
+    let node_token = instance.5;
+    let plan_memory_mb = instance.6;
+    let plan_storage_gb = instance.7;
+
+    if status == "deleted" {
         return Err((StatusCode::BAD_REQUEST, "instance already deleted"));
     }
 
-    if !has_open_after_sales_ticket(&state.db, &instance.1).await {
-        return Err((
-            StatusCode::FORBIDDEN,
-            "User must have an open AfterSales ticket to delete an instance manually.",
-        ));
+    // Physical deletion (if provisioned)
+    if let Some(pid) = provider_instance_id {
+        let node_conn = provider_adapter::NodeConnection {
+            endpoint: node_endpoint,
+            token: node_token,
+        };
+
+        let provider = provider_adapter::IncusProvider::new().map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to initialize provider",
+            )
+        })?;
+
+        if let Err(e) = provider.destroy_instance(&node_conn, &pid).await {
+            error!(error = %e, instance_id = %instance_id, "failed to destroy provider instance");
+            // We continue even if provider fails to allow DB cleanup in case of orphaned records,
+            // but we log it as an error.
+        }
     }
 
     let refund_amount: f64 = payload
@@ -583,11 +610,35 @@ pub async fn admin_delete_instance(
         )
     })?;
 
+    // Reclaim Node resources
+    sqlx::query(
+        "UPDATE nodes SET memory_mb_used = memory_mb_used - ?, storage_gb_used = storage_gb_used - ? 
+         WHERE id = (SELECT node_id FROM instances WHERE id = ?)"
+    )
+    .bind(plan_memory_mb)
+    .bind(plan_storage_gb)
+    .bind(&instance_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to reclaim node resources"))?;
+
+    // Cleanup NAT mappings
+    sqlx::query("DELETE FROM nat_mappings WHERE instance_id = ?")
+        .bind(&instance_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to cleanup NAT mappings",
+            )
+        })?;
+
     if refund_amount > 0.0 {
         // Add balance to user
         sqlx::query("UPDATE users SET balance = balance + ? WHERE id = ?")
             .bind(refund_amount)
-            .bind(&instance.1)
+            .bind(&user_id)
             .execute(&mut *tx)
             .await
             .map_err(|_| {
@@ -604,7 +655,7 @@ pub async fn admin_delete_instance(
             "INSERT INTO balance_transactions (id, user_id, amount, type, description) VALUES (?, ?, ?, 'refund', ?)"
         )
         .bind(&tx_id)
-        .bind(&instance.1)
+        .bind(&user_id)
         .bind(refund_amount)
         .bind(&description)
         .execute(&mut *tx)
