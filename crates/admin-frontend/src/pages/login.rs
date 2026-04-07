@@ -5,6 +5,7 @@ use dioxus_i18n::t;
 
 #[component]
 pub fn LoginPage() -> Element {
+    let mut i18n = dioxus_i18n::prelude::i18n();
     let mut session = use_context::<Signal<AdminSessionState>>();
     let mut email = use_signal(String::new);
     let mut password = use_signal(String::new);
@@ -82,7 +83,22 @@ pub fn LoginPage() -> Element {
 
     rsx! {
         div { class: "content",
-            section { class: "card", style: "max-width: 500px; margin: 50px auto;",
+            div {
+                style: "display: flex; justify-content: flex-end; margin-bottom: 20px;",
+                button {
+                    class: "btn-secondary btn-sm",
+                    onclick: move |_| {
+                        use unic_langid::langid;
+                        if i18n.language() == langid!("en-US") {
+                            i18n.set_language(langid!("zh-CN"));
+                        } else {
+                            i18n.set_language(langid!("en-US"));
+                        }
+                    },
+                    "{t!(\"switch_lang\")}"
+                }
+            }
+            section { class: "card", style: "max-width: 500px; margin: 0 auto;",
                 h2 { "{t!(\"login_admin_title\")}" }
 
                 div { class: "field",

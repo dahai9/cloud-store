@@ -3,6 +3,7 @@ use crate::api;
 use crate::models::{Route, SessionState};
 
 use dioxus::prelude::*;
+use dioxus_i18n::prelude::i18n;
 use dioxus_i18n::t;
 
 #[cfg(target_arch = "wasm32")]
@@ -36,6 +37,19 @@ pub fn StorefrontPage() -> Element {
                     }
                 }
                 div { class: "header-actions",
+                    button {
+                        class: "btn-secondary btn-sm",
+                        onclick: move |_| {
+                            use unic_langid::langid;
+                            let mut i18n = i18n();
+                            if i18n.language() == langid!("en-US") {
+                                i18n.set_language(langid!("zh-CN"));
+                            } else {
+                                i18n.set_language(langid!("en-US"));
+                            }
+                        },
+                        "{t!(\"switch_lang\")}"
+                    }
                     if is_logged_in {
                         button {
                             class: "btn-secondary",
@@ -220,12 +234,27 @@ pub fn OrderPage(plan: String) -> Element {
         div { class: "public-shell",
             header { class: "public-header",
                 h1 { "{t!(\"create_order_title\")}" }
-                button {
-                    class: "btn-secondary",
-                    onclick: move |_| {
-                        navigator.push(Route::StorefrontPage {});
-                    },
-                    "{t!(\"back_btn\")}"
+                div { class: "flex-row", style: "gap: 10px;",
+                    button {
+                        class: "btn-secondary btn-sm",
+                        onclick: move |_| {
+                            use unic_langid::langid;
+                            let mut i18n = i18n();
+                            if i18n.language() == langid!("en-US") {
+                                i18n.set_language(langid!("zh-CN"));
+                            } else {
+                                i18n.set_language(langid!("en-US"));
+                            }
+                        },
+                        "{t!(\"switch_lang\")}"
+                    }
+                    button {
+                        class: "btn-secondary",
+                        onclick: move |_| {
+                            navigator.push(Route::StorefrontPage {});
+                        },
+                        "{t!(\"back_btn\")}"
+                    }
                 }
             }
 

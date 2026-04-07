@@ -1425,7 +1425,7 @@ fn invoice_pill_class(status: &str) -> &'static str {
 pub fn DashboardShell(title: String, active_tab: DashboardTab, children: Element) -> Element {
     let navigator = use_navigator();
     let mut session = use_context::<Signal<SessionState>>();
-    let _i18n = i18n();
+    let mut _i18n = i18n();
 
     rsx! {
         div { class: "layout",
@@ -1468,6 +1468,18 @@ pub fn DashboardShell(title: String, active_tab: DashboardTab, children: Element
                         button {
                             class: "btn-secondary",
                             onclick: move |_| {
+                                use unic_langid::langid;
+                                if _i18n.language() == langid!("en-US") {
+                                    _i18n.set_language(langid!("zh-CN"));
+                                } else {
+                                    _i18n.set_language(langid!("en-US"));
+                                }
+                            },
+                            "{t!(\"switch_lang\")}"
+                        }
+                        button {
+                            class: "btn-secondary",
+                            onclick: move |_| {
                                 navigator.push(Route::StorefrontPage {});
                             },
                             "{t!(\"dash_store_btn\")}"
@@ -1488,6 +1500,7 @@ pub fn DashboardShell(title: String, active_tab: DashboardTab, children: Element
                             "{t!(\"dash_logout_btn\")}"
                         }
                     }
+
                 }
                 {children}
             }

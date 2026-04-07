@@ -2,6 +2,7 @@ use crate::models::{AdminSessionState, Route};
 use dioxus::prelude::*;
 use dioxus_i18n::prelude::i18n;
 use dioxus_i18n::t;
+use unic_langid::langid;
 
 mod guests;
 mod instances;
@@ -22,7 +23,7 @@ pub use tickets::TicketsPage;
 #[component]
 pub fn DashboardLayout() -> Element {
     let mut session = use_context::<Signal<AdminSessionState>>();
-    let _i18n = i18n();
+    let mut _i18n = i18n();
 
     // Redirect if not logged in
     if session().token.is_none() {
@@ -119,6 +120,18 @@ pub fn DashboardLayout() -> Element {
                     }
 
                     div { class: "top-actions",
+                        button {
+                            class: "btn-secondary btn-sm",
+                            onclick: move |_| {
+                                use unic_langid::langid;
+                                if _i18n.language() == langid!("en-US") {
+                                    _i18n.set_language(langid!("zh-CN"));
+                                } else {
+                                    _i18n.set_language(langid!("en-US"));
+                                }
+                            },
+                            "{t!(\"switch_lang\")}"
+                        }
                         a {
                             class: "btn-secondary",
                             href: "http://127.0.0.1:8080",
@@ -126,6 +139,7 @@ pub fn DashboardLayout() -> Element {
                         }
                         button { class: "btn-secondary", onclick: logout, "{t!(\"nav_logout\")}" }
                     }
+
                 }
 
                 Outlet::<Route> {}

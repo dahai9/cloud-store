@@ -125,20 +125,35 @@ pub fn LoginPage(source: Option<String>, plan: Option<String>) -> Element {
                         "{t!(\"auth_login_required\")}"
                     }
                 }
-                button {
-                    r#type: "button",
-                    class: "btn-secondary",
-                    onclick: move |_| {
-                        if is_checkout_flow {
-                            navigator
-                                .push(Route::OrderPage {
-                                    plan: back_return_plan.clone(),
-                                });
-                        } else {
-                            navigator.push(Route::StorefrontPage {});
-                        }
-                    },
-                    "{t!(\"back_btn\")}"
+                div { class: "flex-row", style: "gap: 10px;",
+                    button {
+                        class: "btn-secondary btn-sm",
+                        onclick: move |_| {
+                            use unic_langid::langid;
+                            let mut i18n = dioxus_i18n::prelude::i18n();
+                            if i18n.language() == langid!("en-US") {
+                                i18n.set_language(langid!("zh-CN"));
+                            } else {
+                                i18n.set_language(langid!("en-US"));
+                            }
+                        },
+                        "{t!(\"switch_lang\")}"
+                    }
+                    button {
+                        r#type: "button",
+                        class: "btn-secondary",
+                        onclick: move |_| {
+                            if is_checkout_flow {
+                                navigator
+                                    .push(Route::OrderPage {
+                                        plan: back_return_plan.clone(),
+                                    });
+                            } else {
+                                navigator.push(Route::StorefrontPage {});
+                            }
+                        },
+                        "{t!(\"back_btn\")}"
+                    }
                 }
             }
             main { class: "public-main login-layout",
