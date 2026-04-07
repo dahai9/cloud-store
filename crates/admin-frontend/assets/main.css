@@ -320,6 +320,47 @@ button:active {
   color: var(--ok);
 }
 
+.status-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.status-tag.status-starting {
+  color: #1f57cc;
+  background: #eef3ff;
+  border: 1px solid rgba(31, 87, 204, 0.12);
+}
+
+.status-tag.status-running {
+  color: #117749;
+  background: #dff8ea;
+  border: 1px solid rgba(17, 119, 73, 0.12);
+}
+
+.status-tag.status-stopped {
+  color: #986200;
+  background: #fff0cf;
+  border: 1px solid rgba(152, 98, 0, 0.12);
+}
+
+.status-tag.status-deleted {
+  color: #db3c3c;
+  background: #ffe9e9;
+  border: 1px solid rgba(219, 60, 60, 0.12);
+}
+
+.status-tag.status-unknown {
+  color: var(--muted);
+  background: #f1f5f9;
+  border: 1px solid rgba(112, 123, 144, 0.12);
+}
+
 .list {
   margin: 0;
   padding: 0;

@@ -139,11 +139,12 @@ pub fn ServicesPage() -> Element {
 
 fn instance_status_class(status: &str) -> &'static str {
     match status.to_lowercase().as_str() {
-        "running" => "paid",
-        "stopped" => "expired",
-        "pending" | "starting" => "pending",
-        "unknown" => "expired",
-        _ => "pending",
+        "running" => "status-running",
+        "stopped" | "frozen" => "status-stopped",
+        "pending" | "starting" | "provisioning" => "status-starting",
+        "deleted" => "status-deleted",
+        "unknown" => "status-unknown",
+        _ => "status-unknown",
     }
 }
 

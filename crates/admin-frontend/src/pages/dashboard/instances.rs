@@ -3,6 +3,16 @@ use crate::models::AdminSessionState;
 use dioxus::prelude::*;
 use dioxus_i18n::t;
 
+fn status_class(status: &str) -> &'static str {
+    match status.to_lowercase().as_str() {
+        "running" => "status-running",
+        "stopped" | "frozen" => "status-stopped",
+        "pending" | "starting" | "provisioning" => "status-starting",
+        "deleted" => "status-deleted",
+        _ => "status-unknown",
+    }
+}
+
 #[component]
 pub fn InstancesPage() -> Element {
     let mut session = use_context::<Signal<AdminSessionState>>();
@@ -74,7 +84,7 @@ pub fn InstancesPage() -> Element {
                                     td { "{inst.node_name}" }
                                     td { "{inst.plan_name}" }
                                     td {
-                                        span { class: "status-tag {inst.status}", "{inst.status}" }
+                                        span { class: "status-tag {status_class(&inst.status)}", "{inst.status}" }
                                     }
                                     td { "{inst.os_template}" }
                                     td { "{inst.created_at}" }

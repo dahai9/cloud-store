@@ -1054,19 +1054,32 @@ th {
   animation: pulse-in 220ms ease;
 }
 
-.pill.pending {
-  color: #db3c3c;
-  background: #ffe9e9;
+.pill.pending,
+.pill.status-starting {
+  color: #1f57cc;
+  background: #eef3ff;
 }
 
-.pill.paid {
+.pill.paid,
+.pill.status-running {
   color: #117749;
   background: #dff8ea;
 }
 
-.pill.expired {
+.pill.expired,
+.pill.status-stopped {
   color: #986200;
   background: #fff0cf;
+}
+
+.pill.status-deleted {
+  color: #db3c3c;
+  background: #ffe9e9;
+}
+
+.pill.status-unknown {
+  color: var(--muted);
+  background: #f1f5f9;
 }
 
 .full {
