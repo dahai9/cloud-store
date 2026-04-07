@@ -192,8 +192,10 @@ pub async fn ticket_messages_stream(
     let db = state.db.clone();
     let s = stream! {
         let mut last_created_at = "1970-01-01 00:00:00".to_string();
+        let mut last_status = String::new();
 
         loop {
+            // Check for new messages
             let q = "SELECT id, sender_user_id, message, created_at FROM support_messages WHERE ticket_id = ? AND created_at > ? ORDER BY created_at ASC";
             let rows = sqlx::query_as::<_, (String, Option<String>, String, String)>(q)
                 .bind(&ticket_id)
@@ -213,8 +215,20 @@ pub async fn ticket_messages_stream(
                     last_created_at = created_at;
 
                     if let Ok(json) = serde_json::to_string(&item) {
-                        yield Ok(Event::default().data(json));
+                        yield Ok(Event::default().event("message").data(json));
                     }
+                }
+            }
+
+            // Check for status change
+            if let Ok(current_status) = sqlx::query_scalar::<_, String>("SELECT status FROM support_tickets WHERE id = ?")
+                .bind(&ticket_id)
+                .fetch_one(&db)
+                .await 
+            {
+                if current_status != last_status {
+                    last_status = current_status.clone();
+                    yield Ok(Event::default().event("status").data(current_status));
                 }
             }
 
@@ -245,8 +259,10 @@ pub async fn admin_ticket_messages_stream(
     let db = state.db.clone();
     let s = stream! {
         let mut last_created_at = "1970-01-01 00:00:00".to_string();
+        let mut last_status = String::new();
 
         loop {
+            // Check for new messages
             let q = "SELECT id, sender_user_id, message, created_at FROM support_messages WHERE ticket_id = ? AND created_at > ? ORDER BY created_at ASC";
             let rows = sqlx::query_as::<_, (String, Option<String>, String, String)>(q)
                 .bind(&ticket_id)
@@ -266,8 +282,20 @@ pub async fn admin_ticket_messages_stream(
                     last_created_at = created_at;
 
                     if let Ok(json) = serde_json::to_string(&item) {
-                        yield Ok(Event::default().data(json));
+                        yield Ok(Event::default().event("message").data(json));
                     }
+                }
+            }
+
+            // Check for status change
+            if let Ok(current_status) = sqlx::query_scalar::<_, String>("SELECT status FROM support_tickets WHERE id = ?")
+                .bind(&ticket_id)
+                .fetch_one(&db)
+                .await 
+            {
+                if current_status != last_status {
+                    last_status = current_status.clone();
+                    yield Ok(Event::default().event("status").data(current_status));
                 }
             }
 

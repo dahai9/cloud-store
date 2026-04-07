@@ -680,8 +680,22 @@ pub fn TicketsPage() -> Element {
                         }
                     }) as Box<dyn FnMut(MessageEvent)>);
 
-                    es.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
+                    es.add_event_listener_with_callback("message", onmessage.as_ref().unchecked_ref()).unwrap();
                     onmessage.forget();
+                    
+                    let mut session_clone = session.clone();
+                    let tid_clone = tid.clone();
+                    let onstatus = Closure::wrap(Box::new(move |e: MessageEvent| {
+                        if let Some(status_str) = e.data().as_string() {
+                            let mut s = session_clone.write();
+                            if let Some(ticket) = s.tickets.iter_mut().find(|t| t.id == tid_clone) {
+                                ticket.status = status_str;
+                            }
+                        }
+                    }) as Box<dyn FnMut(MessageEvent)>);
+
+                    es.add_event_listener_with_callback("status", onstatus.as_ref().unchecked_ref()).unwrap();
+                    onstatus.forget();
                     
                     active_sse.set(Some(es));
                 }

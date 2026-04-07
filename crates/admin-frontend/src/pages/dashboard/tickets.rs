@@ -57,11 +57,26 @@ pub fn TicketsPage() -> Element {
                     }
                 }) as Box<dyn FnMut(MessageEvent)>);
 
-                es.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
+                es.add_event_listener_with_callback("message", onmessage.as_ref().unchecked_ref()).unwrap();
                 onmessage.forget();
-                
-                active_sse.set(Some(es));
-            }
+
+                let mut session_clone = session.clone();
+                let mut selected_status_clone = selected_ticket_status.clone();
+                let tid_clone = tid.clone();
+                let onstatus = Closure::wrap(Box::new(move |e: MessageEvent| {
+                    if let Some(status_str) = e.data().as_string() {
+                        selected_status_clone.set(status_str.clone());
+                        let mut s = session_clone.write();
+                        if let Some(ticket) = s.tickets.iter_mut().find(|t| t.id == tid_clone) {
+                            ticket.status = status_str;
+                        }
+                    }
+                }) as Box<dyn FnMut(MessageEvent)>);
+
+                es.add_event_listener_with_callback("status", onstatus.as_ref().unchecked_ref()).unwrap();
+                onstatus.forget();
+
+                active_sse.set(Some(es));            }
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -219,10 +234,15 @@ pub fn TicketsPage() -> Element {
                     div { class: "admin-controls", style: "padding: 20px; border: 1px solid #eee; border-radius: 8px; background: #fff;",
                         h3 { "管理操作" }
                         div { class: "field",
-                            label { "修改状态 (open/in_progress/resolved/closed)" }
-                            input {
+                            label { "修改状态" }
+                            select {
+                                style: "width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px;",
                                 value: "{selected_ticket_status()}",
-                                oninput: move |evt| selected_ticket_status.set(evt.value()),
+                                onchange: move |evt| selected_ticket_status.set(evt.value()),
+                                option { value: "open", "open (打开)" }
+                                option { value: "in_progress", "in_progress (处理中)" }
+                                option { value: "resolved", "resolved (已解决)" }
+                                option { value: "closed", "closed (已关闭)" }
                             }
                         }
                         div { class: "field",
