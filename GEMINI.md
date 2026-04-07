@@ -8,12 +8,12 @@
 - **Frontend:** [Dioxus](https://dioxuslabs.com/) (Fullstack GUI library, compiled to WebAssembly for the browser).
 - **Virtualization:** [Incus](https://linuxcontainers.org/incus/) (LXC-based container management).
 - **Payments:** [PayPal](https://developer.paypal.com/) integration for automated checkout and billing.
-- **Tooling:** [Just](https://github.com/casey/just) (Command runner), [Nix](https://nixos.org/) & [direnv](https://direnv.net/) (Development environment).
+- **Tooling:** [Just](https://github.com/casey/just) (Command runner), [Nix](https://nixos.org/) & [direnv](https://direnv.net/) (Development environment), [.pre-commit](https://pre-commit.com/) (Git hooks).
 
 ### Architecture
-- `crates/web-app`: The central Axum backend. It hosts two separate API listeners: a **Guest API** (port 8081) and an **Admin API** (port 8082).
+- `crates/web-app`: The central Axum backend. It hosts two separate API listeners: a **Guest API** (port 8081) and an **Admin API** (port 8082). The Admin API supports full guest instance lifecycle management (list, stop, delete, add).
 - `crates/frontend`: The user-facing storefront. Compiled to WASM, it interacts with the Guest API.
-- `crates/admin-frontend`: The administrative dashboard. Also compiled to WASM, it interacts with the Admin API.
+- `crates/admin-frontend`: The administrative dashboard. Supports managing guest users and their associated instances directly.
 - `crates/shared-domain`: Common business logic, models (`NatPlan`, `Node`, `Instance`, `NatPortLease`), and enums shared across all crates.
 - `crates/provider-adapter`: Abstraction layer for interacting with VPS providers. Implements `ComputeProvider` with `IncusProvider` using certificate-based authentication.
 - `crates/worker`: Background worker for long-running tasks:
@@ -38,6 +38,7 @@
   - `cp .env.example .env` (then configure secrets)
   - `mkdir -p data`
   - `just migrate`: Runs database migrations.
+  - `pre-commit install`: Sets up automated git hooks.
 - **Development:**
   - `just serve-api`: Runs the Axum backend.
   - `just serve-frontend`: Runs the Dioxus storefront (port 8080).
@@ -67,5 +68,7 @@
 - **Secrets:** Never log or commit sensitive data. Use `.env` for local configuration.
 
 ### Deployment & CI
+- **Automated Checks:** All commits are checked via `.pre-commit` hooks for formatting (`fmt`), lints (`clippy`), and basic compilation (`check`).
 - Ensure all `just check`, `just fmt`, and `just clippy` pass before finalizing changes.
 - Frontend assets (CSS, images) are located in `assets/` within their respective crates.
+
