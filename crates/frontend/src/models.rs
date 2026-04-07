@@ -108,6 +108,12 @@ pub struct TicketMessageItem {
 #[derive(Clone, Serialize)]
 pub struct PayPalCreateOrderRequest {
     pub plan_code: String,
+    pub payment_method: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct RechargeRequest {
+    pub amount: String,
 }
 
 #[derive(Clone, Deserialize)]

@@ -237,8 +237,14 @@ pub fn OrderPage(plan: String) -> Element {
         }
     });
 
-    let checkout_loading = use_signal(|| false);
-    let checkout_error = use_signal(|| None::<String>);
+    #[allow(unused_mut)]
+    let mut checkout_loading = use_signal(|| false);
+    #[allow(unused_mut)]
+    let mut checkout_error = use_signal(|| None::<String>);
+    #[allow(unused_mut)]
+    let mut payment_method = use_signal(|| "paypal".to_string());
+    #[allow(unused_mut)]
+    let mut payment_success = use_signal(|| false);
 
     let selected_plan_details = session()
         .public_plans
@@ -258,35 +264,51 @@ pub fn OrderPage(plan: String) -> Element {
         let token = session().token.clone().unwrap_or_default();
         let api_base = session().api_base.clone();
         let plan_code = selected_plan().clone();
+        let method = payment_method();
         let mut loading = checkout_loading;
         let mut error = checkout_error;
+        let mut success = payment_success;
 
         spawn(async move {
-            loading.set(true);
-            error.set(None);
+            *loading.write() = true;
+            *error.write() = None;
 
-            match api::create_paypal_checkout(&api_base, &token, &plan_code).await {
+            let method_opt = if method == "balance" {
+                Some("balance".to_string())
+            } else {
+                Some("paypal".to_string())
+            };
+
+            match api::create_paypal_checkout(&api_base, &token, &plan_code, method_opt).await {
                 Ok(response) => {
+                    if method == "balance" {
+                        *loading.write() = false;
+                        *success.write() = true;
+                        gloo_timers::future::TimeoutFuture::new(1500).await;
+                        navigator.push(Route::ServicesPage {});
+                        return;
+                    }
+
                     loading.set(false);
                     #[cfg(target_arch = "wasm32")]
                     {
                         if let Some(win) = window() {
                             if win.location().set_href(&response.approval_url).is_err() {
-                                error.set(Some(t!("payment_error_open_sandbox").to_string()));
+                                *error.write() = Some(t!("payment_error_open_sandbox").to_string());
                             }
                         } else {
-                            error.set(Some(t!("payment_error_no_window").to_string()));
+                            *error.write() = Some(t!("payment_error_no_window").to_string());
                         }
                     }
                     #[cfg(not(target_arch = "wasm32"))]
                     {
                         let _ = response;
-                        error.set(Some(t!("payment_error_not_supported").to_string()));
+                        *error.write() = Some(t!("payment_error_not_supported").to_string());
                     }
                 }
                 Err(err) => {
-                    loading.set(false);
-                    error.set(Some(err));
+                    *loading.write() = false;
+                    *error.write() = Some(err);
                 }
             }
         });
@@ -337,7 +359,7 @@ pub fn OrderPage(plan: String) -> Element {
                         }
                     }
 
-                    if let Some(plan) = selected_plan_details {
+                    if let Some(ref plan) = selected_plan_details {
                         p {
                             {t!("spec_label", cores: plan.cpu_cores, cpu_pct: plan.cpu_allowance_pct, mem: plan.memory_mb, disk: plan.storage_gb, bw: plan.bandwidth_mbps, traffic: format_traffic_gb(plan.traffic_gb))}
                         }
@@ -347,31 +369,43 @@ pub fn OrderPage(plan: String) -> Element {
                     }
 
                     h4 { "{t!(\"payment_method_title\")}" }
-                    div { class: "pay-methods",
+                    div { class: "pay-methods-grid",
                         label {
+                            class: if payment_method() == "paypal" { "pay-method-item active" } else { "pay-method-item" },
                             input {
                                 r#type: "radio",
                                 name: "pay",
-                                checked: true,
-                                disabled: true,
+                                checked: payment_method() == "paypal",
+                                onchange: move |_| *payment_method.write() = "paypal".to_string(),
                             }
-                            " {t!(\"pay_paypal\")}"
+                            span { class: "method-name", "{t!(\"dash_pay_with_paypal\")}" }
                         }
-                        label {
-                            input {
-                                r#type: "radio",
-                                name: "pay",
-                                disabled: true,
+                        if session().token.is_some() {
+                            {
+                                let balance_f: f64 = session().balance.parse().unwrap_or(0.0);
+                                let price_f: f64 = selected_plan_details.as_ref().map(|p| p.monthly_price.parse().unwrap_or(0.0)).unwrap_or(0.0);
+                                let has_enough = balance_f >= price_f;
+                                rsx! {
+                                    label {
+                                        class: if payment_method() == "balance" { "pay-method-item active" } else { "pay-method-item" },
+                                        style: if !has_enough { "opacity: 0.6; cursor: not-allowed;" } else { "" },
+                                        input {
+                                            r#type: "radio",
+                                            name: "pay",
+                                            checked: payment_method() == "balance",
+                                            disabled: !has_enough,
+                                            onchange: move |_| *payment_method.write() = "balance".to_string(),
+                                        }
+                                        div { class: "method-info-box",
+                                            span { class: "method-name", "{t!(\"dash_pay_with_balance\")}" }
+                                            span { class: "method-meta", "{t!(\"dash_current_balance\")}: ${session().balance}" }
+                                            if !has_enough {
+                                                span { class: "text-danger method-hint", "{t!(\"dash_insufficient_balance\")}" }
+                                            }
+                                        }
+                                    }
+                                }
                             }
-                            " {t!(\"pay_alipay\")}"
-                        }
-                        label {
-                            input {
-                                r#type: "radio",
-                                name: "pay",
-                                disabled: true,
-                            }
-                            " {t!(\"pay_bank\")}"
                         }
                     }
 
@@ -379,14 +413,22 @@ pub fn OrderPage(plan: String) -> Element {
                         p { class: "notice", "{err}" }
                     }
 
-                    button {
-                        class: "btn-primary full",
-                        disabled: *checkout_loading.read(),
-                        onclick: on_checkout,
-                        if *checkout_loading.read() {
-                            "{t!(\"opening_paypal\")}"
-                        } else {
-                            "{t!(\"proceed_checkout\")}"
+                    if payment_success() {
+                        div { class: "success-banner",
+                            "{t!(\"dash_payment_success_redirect\")}"
+                        }
+                    } else {
+                        button {
+                            class: "btn-primary full",
+                            disabled: *checkout_loading.read(),
+                            onclick: on_checkout,
+                            if *checkout_loading.read() {
+                                "{t!(\"dash_preparing_checkout\")}"
+                            } else if payment_method() == "balance" {
+                                "{t!(\"dash_pay_now\")}"
+                            } else {
+                                "{t!(\"dash_proceed_to_checkout\")}"
+                            }
                         }
                     }
 

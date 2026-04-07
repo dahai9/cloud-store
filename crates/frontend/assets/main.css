@@ -391,10 +391,138 @@ body::before {
   line-height: 1.8;
 }
 
-.pay-methods {
+.pay-methods-grid {
   display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.pay-method-item {
+  position: relative;
+  border: 2px solid var(--line);
+  border-radius: 16px;
+  padding: 16px;
+  cursor: pointer;
+  transition: all 200ms ease;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: #fff;
+}
+
+.pay-method-item:hover {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
+.pay-method-item.active {
+  border-color: var(--accent);
+  background: #f0f7ff;
+  box-shadow: 0 10px 20px rgba(31, 87, 204, 0.08);
+}
+
+.pay-method-item input[type="radio"] {
+  margin-top: 4px;
+}
+
+.method-info-box {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.method-name {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.method-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.method-hint {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.success-banner {
+  background: #ecfdf5;
+  border: 1px solid #10b981;
+  color: #065f46;
+  padding: 16px;
+  border-radius: 12px;
+  text-align: center;
+  font-weight: 600;
+}
+
+.recharge-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.amount-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.currency-symbol {
+  position: absolute;
+  left: 12px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.recharge-input {
+  width: 120px;
+  height: 42px;
+  padding: 0 12px 0 28px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  background: #fff;
+}
+
+.preset-amounts {
+  display: flex;
   gap: 8px;
-  margin-bottom: 14px;
+}
+
+.preset-btn {
+  height: 42px;
+  padding: 0 16px;
+  border-radius: 10px;
+  border: 1px solid #d5def0;
+  background: #fff;
+  color: var(--accent);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 160ms ease;
+}
+
+.preset-btn:hover {
+  background: #f0f4ff;
+  border-color: var(--accent);
+}
+
+.preset-btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  box-shadow: 0 8px 16px rgba(31, 87, 204, 0.2);
+}
+
+.recharge-btn {
+  height: 42px;
 }
 
 .order-meta {

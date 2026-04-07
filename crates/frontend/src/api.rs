@@ -223,6 +223,7 @@ pub async fn create_paypal_checkout(
     api_base: &str,
     token: &str,
     plan_code: &str,
+    payment_method: Option<String>,
 ) -> Result<PayPalCreateOrderResponse, String> {
     if matches!(
         auth_transport_risk(api_base),
@@ -235,6 +236,7 @@ pub async fn create_paypal_checkout(
 
     let payload = PayPalCreateOrderRequest {
         plan_code: plan_code.to_string(),
+        payment_method,
     };
 
     let client = Client::new();
@@ -344,12 +346,21 @@ pub async fn fetch_balance_transactions(
         .map_err(|e| format!("failed to parse balance transactions: {e}"))
 }
 
-pub async fn recharge_balance(api_base: &str, token: &str) -> Result<String, String> {
+pub async fn recharge_balance(
+    api_base: &str,
+    token: &str,
+    amount: &str,
+) -> Result<PayPalCreateOrderResponse, String> {
     let client = Client::new();
     let url = format!("{api_base}/api/user/balance/recharge");
+    let payload = crate::models::RechargeRequest {
+        amount: amount.to_string(),
+    };
+
     let resp = client
         .post(&url)
         .header("Authorization", &format!("Bearer {token}"))
+        .json(&payload)
         .send()
         .await
         .map_err(|e| format!("recharge request failed: {e}"))?;
@@ -358,11 +369,9 @@ pub async fn recharge_balance(api_base: &str, token: &str) -> Result<String, Str
         return Err(format!("recharge failed: {}", resp.status()));
     }
 
-    let result = resp
-        .json::<crate::models::UserBalanceInfo>()
+    resp.json::<PayPalCreateOrderResponse>()
         .await
-        .map_err(|e| format!("failed to parse balance: {e}"))?;
-    Ok(result.balance)
+        .map_err(|e| format!("failed to parse recharge response: {e}"))
 }
 
 pub async fn update_auto_renew(

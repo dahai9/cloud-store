@@ -220,7 +220,7 @@ fn build_guest_router(app_state: AppState) -> Router {
         )
         .route(
             "/api/user/balance/recharge",
-            post(billing::recharge_balance),
+            post(payment::paypal::create_recharge_paypal),
         )
         .route("/api/invoices", get(billing::list_invoices))
         .route("/api/instances", get(instances::list_instances))

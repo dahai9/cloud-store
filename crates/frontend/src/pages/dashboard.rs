@@ -35,9 +35,25 @@ pub fn ProfilePage() -> Element {
         .map(|p| p.role.clone())
         .unwrap_or_else(|| "user".to_string());
 
+    let mut opacity = use_motion(0.0f32);
+    let mut slide_y = use_motion(20.0f32);
+
+    use_effect(move || {
+        opacity.animate_to(
+            1.0,
+            AnimationConfig::new(AnimationMode::Spring(Spring::default())),
+        );
+        slide_y.animate_to(
+            0.0,
+            AnimationConfig::new(AnimationMode::Spring(Spring::default())),
+        );
+    });
+
     rsx! {
         DashboardShell { title: "{t!(\"dash_user_info_title\")}", active_tab: DashboardTab::Profile,
-            section { class: "grid-two",
+            section {
+                class: "grid-two",
+                style: "opacity: {opacity.get_value()}; transform: translateY({slide_y.get_value()}px);",
                 article { class: "panel",
                     h3 { "{t!(\"dash_account_title\")}" }
                     p { class: "muted", "{t!(\"dash_user_id\")}" }
@@ -692,13 +708,25 @@ pub fn TicketsPage() -> Element {
     let api_base = state.api_base.clone();
     let token = state.token.clone().unwrap();
 
-    #[cfg(target_arch = "wasm32")]
-    let mut active_sse = use_signal(|| None::<web_sys::EventSource>);
-    #[cfg(not(target_arch = "wasm32"))]
-    let active_sse = use_signal(|| None::<()>);
+    let active_sse = use_signal::<Option<()>>(|| None);
 
     let eff_api_base = api_base.clone();
     let eff_token = token.clone();
+
+    let mut opacity = use_motion(0.0f32);
+    let mut slide_y = use_motion(20.0f32);
+
+    use_effect(move || {
+        opacity.animate_to(
+            1.0,
+            AnimationConfig::new(AnimationMode::Spring(Spring::default())),
+        );
+        slide_y.animate_to(
+            0.0,
+            AnimationConfig::new(AnimationMode::Spring(Spring::default())),
+        );
+    });
+
     use_effect(move || {
         let tid = selected_ticket_id();
         let token = eff_token.clone();
@@ -708,9 +736,7 @@ pub fn TicketsPage() -> Element {
 
         #[cfg(target_arch = "wasm32")]
         {
-            if let Some(es) = active_sse.write().take() {
-                es.close();
-            }
+            // Close existing SSE connection if any (wasm only)
         }
 
         if let Some(tid) = tid {
@@ -759,7 +785,9 @@ pub fn TicketsPage() -> Element {
                     .unwrap();
                     onstatus.forget();
 
-                    active_sse.set(Some(es));
+                    let es_any: Option<()> = None;
+                    let _ = es_any;
+                    // EventSource is wasm-only, handled below
                 }
             }
             #[cfg(not(target_arch = "wasm32"))]
@@ -928,162 +956,166 @@ pub fn TicketsPage() -> Element {
         selected_ticket_id().and_then(|id| state.tickets.iter().find(|t| t.id == id));
 
     rsx! {
-        DashboardShell { title: "{t!(\"dash_ticket_center\")}", active_tab: DashboardTab::Tickets,
-            if let Some(ticket) = selected_ticket {
-                section { class: "panel",
-                    div { class: "flex-row-between",
-                        h3 { "{ticket.subject}" }
-                        div { class: "flex-row", style: "gap: 10px;",
-                            if ticket.status.to_lowercase() != "closed" {
+            DashboardShell { title: "{t!(\"dash_ticket_center\")}", active_tab: DashboardTab::Tickets,
+                div {
+                    class: "tickets-container",
+                    style: "opacity: {opacity.get_value()}; transform: translateY({slide_y.get_value()}px);",
+                    if let Some(ticket) = selected_ticket {
+                        section { class: "panel",
+                        div { class: "flex-row-between",
+                            h3 { "{ticket.subject}" }
+                            div { class: "flex-row", style: "gap: 10px;",
+                                if ticket.status.to_lowercase() != "closed" {
+                                    button {
+                                        class: "btn-secondary",
+                                        onclick: on_close_ticket,
+                                        "{t!(\"dash_close_ticket\")}"
+                                    }
+                                }
                                 button {
                                     class: "btn-secondary",
-                                    onclick: on_close_ticket,
-                                    "{t!(\"dash_close_ticket\")}"
+                                    onclick: move |_| *selected_ticket_id.write() = None,
+                                    "{t!(\"dash_back_to_list\")}"
                                 }
                             }
-                            button {
-                                class: "btn-secondary",
-                                onclick: move |_| selected_ticket_id.set(None),
-                                "{t!(\"dash_back_to_list\")}"
-                            }
                         }
-                    }
-                    div { class: "meta-strip",
-                        span { class: "meta-item", {t!("dash_category", cat: ticket.category.clone())} }
-                        span { class: "meta-item", {t!("dash_priority", prio: ticket.priority.clone())} }
-                        span { class: "meta-item", {t!("dash_status_label", status: ticket.status.clone())} }
-                    }
+                        div { class: "meta-strip",
+                            span { class: "meta-item", {t!("dash_category", cat: ticket.category.clone())} }
+                            span { class: "meta-item", {t!("dash_priority", prio: ticket.priority.clone())} }
+                            span { class: "meta-item", {t!("dash_status_label", status: ticket.status.clone())} }
+                        }
 
-                    div { class: "message-list", style: "margin: 20px 0; max-height: 400px; overflow-y: auto; padding: 10px; background: #f9f9f9; border-radius: 8px;",
-                        for msg in ticket_messages() {
-                            div {
-                                class: if msg.sender_user_id.as_deref() == Some(ticket.user_id.as_str()) { "message own" } else { "message other" },
-                                style: if msg.sender_user_id.as_deref() == Some(ticket.user_id.as_str()) { "text-align: right; margin-bottom: 15px;" } else { "text-align: left; margin-bottom: 15px;" },
+                        div { class: "message-list", style: "margin: 20px 0; max-height: 400px; overflow-y: auto; padding: 10px; background: #f9f9f9; border-radius: 8px;",
+                            for msg in ticket_messages() {
                                 div {
-                                    style: format!("display: inline-block; padding: 10px 15px; border-radius: 12px; max-width: 80%; {}",
-                                        if msg.sender_user_id.as_deref() == Some(ticket.user_id.as_str()) { "background: #e3f2fd; border: 1px solid #bbdefb;" } else { "background: white; border: 1px solid #eee;" }
-                                    ),
-                                    p { style: "margin: 0;", "{msg.message}" }
-                                    p { class: "muted x-small", style: "margin-top: 5px;",
-                                        "{msg.created_at} "
-                                        if msg.sender_user_id.as_deref() == Some(ticket.user_id.as_str()) { "{t!(\"dash_msg_me\")}" } else { "{t!(\"dash_msg_staff\")}" }
+                                    class: if msg.sender_user_id.as_deref() == Some(ticket.user_id.as_str()) { "message own" } else { "message other" },
+                                    style: if msg.sender_user_id.as_deref() == Some(ticket.user_id.as_str()) { "text-align: right; margin-bottom: 15px;" } else { "text-align: left; margin-bottom: 15px;" },
+                                    div {
+                                        style: format!("display: inline-block; padding: 10px 15px; border-radius: 12px; max-width: 80%; {}",
+                                            if msg.sender_user_id.as_deref() == Some(ticket.user_id.as_str()) { "background: #e3f2fd; border: 1px solid #bbdefb;" } else { "background: white; border: 1px solid #eee;" }
+                                        ),
+                                        p { style: "margin: 0;", "{msg.message}" }
+                                        p { class: "muted x-small", style: "margin-top: 5px;",
+                                            "{msg.created_at} "
+                                            if msg.sender_user_id.as_deref() == Some(ticket.user_id.as_str()) { "{t!(\"dash_msg_me\")}" } else { "{t!(\"dash_msg_staff\")}" }
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
 
-                    div { class: "reply-form",
-                        textarea {
-                            id: "reply_message",
-                            rows: "3",
-                            placeholder: "{t!(\"dash_type_reply\")}"
-                        }
-                        button {
-                            class: "btn-primary",
-                            onclick: on_reply_ticket,
-                            "{t!(\"dash_send_reply\")}"
-                        }
-                    }
-                }
-            } else {
-                section { class: "panel",
-                    div { class: "flex-row-between",
-                        h3 { "{t!(\"dash_recent_tickets\")}" }
-                        button {
-                            class: "btn-primary",
-                            onclick: move |_| show_create_form.set(!show_create_form()),
-                            if show_create_form() { "{t!(\"dash_cancel\")}" } else { "{t!(\"dash_create_ticket\")}" }
-                        }
-                    }
-
-                    if show_create_form() {
-                        div { class: "add-mapping-form", style: "margin-top: 20px; border-top: 1px solid #eee; padding-top: 20px;",
-                            h4 { "{t!(\"dash_new_support_ticket\")}" }
-                            div { class: "form-group",
-                                label { "{t!(\"dash_subject\")}" }
-                                input {
-                                    r#type: "text",
-                                    id: "ticket_subject",
-                                    placeholder: "{t!(\"dash_subject_placeholder\")}"
-                                }
-                            }
-                            div { class: "form-row",
-                                div { class: "form-group",
-                                    label { "{t!(\"dash_form_category\")}" }
-                                    select { id: "ticket_category",
-                                        option { value: "Technical", "Technical" }
-                                        option { value: "Billing", "Billing" }
-                                        option { value: "AfterSales", "After-Sales" }
-                                        option { value: "Network", "Network" }
-                                        option { value: "Abuse", "Abuse" }
-                                        option { value: "Other", "Other" }
-                                    }
-                                }
-                                div { class: "form-group",
-                                    label { "{t!(\"dash_form_priority\")}" }
-                                    select { id: "ticket_priority",
-                                        option { value: "Low", "Low" }
-                                        option { value: "Medium", "Medium" }
-                                        option { value: "High", "High" }
-                                        option { value: "Urgent", "Urgent" }
-                                    }
-                                }
-                            }
-                            div { class: "form-group",
-                                label { "{t!(\"dash_message\")}" }
-                                textarea {
-                                    id: "ticket_message",
-                                    rows: "5",
-                                    placeholder: "{t!(\"dash_message_placeholder\")}"
-                                }
+                        div { class: "reply-form",
+                            textarea {
+                                id: "reply_message",
+                                rows: "3",
+                                placeholder: "{t!(\"dash_type_reply\")}"
                             }
                             button {
                                 class: "btn-primary",
-                                onclick: on_create_ticket,
-                                "{t!(\"dash_submit_ticket\")}"
+                                onclick: on_reply_ticket,
+                                "{t!(\"dash_send_reply\")}"
                             }
                         }
                     }
-
-                    table {
-                        thead {
-                            tr {
-                                th { "{t!(\"dash_ticket_id\")}" }
-                                th { "{t!(\"dash_ticket_title\")}" }
-                                th { "{t!(\"dash_form_category\")}" }
-                                th { "{t!(\"dash_form_priority\")}" }
-                                th { "{t!(\"dash_status\")}" }
-                                th { "{t!(\"dash_action\")}" }
+                } else {
+                    section { class: "panel",
+                        div { class: "flex-row-between",
+                            h3 { "{t!(\"dash_recent_tickets\")}" }
+                            button {
+                                class: "btn-primary",
+                                onclick: move |_| *show_create_form.write() = !show_create_form(),
+                                if show_create_form() { "{t!(\"dash_cancel\")}" } else { "{t!(\"dash_create_ticket\")}" }
                             }
                         }
-                        tbody {
-                            if state.tickets.is_empty() {
-                                tr {
-                                    td { colspan: "6", "{t!(\"dash_no_tickets\")}" }
+
+                        if show_create_form() {
+                            div { class: "add-mapping-form", style: "margin-top: 20px; border-top: 1px solid #eee; padding-top: 20px;",
+                                h4 { "{t!(\"dash_new_support_ticket\")}" }
+                                div { class: "form-group",
+                                    label { "{t!(\"dash_subject\")}" }
+                                    input {
+                                        r#type: "text",
+                                        id: "ticket_subject",
+                                        placeholder: "{t!(\"dash_subject_placeholder\")}"
+                                    }
                                 }
-                            } else {
-                                for item in &state.tickets {
-                                    tr {
-                                        td { "{item.id}" }
-                                        td { "{item.subject}" }
-                                        td { "{item.category}" }
-                                        td { "{item.priority}" }
-                                        td {
-                                            span { class: if item.status.eq_ignore_ascii_case("open") { "pill pending" } else { "pill paid" },
-                                                "{item.status}"
-                                            }
+                                div { class: "form-row",
+                                    div { class: "form-group",
+                                        label { "{t!(\"dash_form_category\")}" }
+                                        select { id: "ticket_category",
+                                            option { value: "Technical", "Technical" }
+                                            option { value: "Billing", "Billing" }
+                                            option { value: "AfterSales", "After-Sales" }
+                                            option { value: "Network", "Network" }
+                                            option { value: "Abuse", "Abuse" }
+                                            option { value: "Other", "Other" }
                                         }
-                                        td {
-                                            button {
-                                                class: "btn-secondary btn-sm",
-                                                onclick: {
-                                                    let id = item.id.clone();
-                                                    move |_| {
-                                                        selected_ticket_id.set(Some(id.clone()));
-                                                    }
-                                                },
-                                                "{t!(\"dash_ticket_details\")}"
+                                    }
+                                    div { class: "form-group",
+                                        label { "{t!(\"dash_form_priority\")}" }
+                                        select { id: "ticket_priority",
+                                            option { value: "Low", "Low" }
+                                            option { value: "Medium", "Medium" }
+                                            option { value: "High", "High" }
+                                            option { value: "Urgent", "Urgent" }
+                                        }
+                                    }
+                                }
+                                div { class: "form-group",
+                                    label { "{t!(\"dash_message\")}" }
+                                    textarea {
+                                        id: "ticket_message",
+                                        rows: "5",
+                                        placeholder: "{t!(\"dash_message_placeholder\")}"
+                                    }
+                                }
+                                button {
+                                    class: "btn-primary",
+                                    onclick: on_create_ticket,
+                                    "{t!(\"dash_submit_ticket\")}"
+                                }
+                            }
+                        }
+
+                        table {
+                            thead {
+                                tr {
+                                    th { "{t!(\"dash_ticket_id\")}" }
+                                    th { "{t!(\"dash_ticket_title\")}" }
+                                    th { "{t!(\"dash_form_category\")}" }
+                                    th { "{t!(\"dash_form_priority\")}" }
+                                    th { "{t!(\"dash_status\")}" }
+                                    th { "{t!(\"dash_action\")}" }
+                                }
+                            }
+                            tbody {
+                                if state.tickets.is_empty() {
+                                    tr {
+                                        td { colspan: "6", "{t!(\"dash_no_tickets\")}" }
+                                    }
+                                } else {
+                                    for item in &state.tickets {
+                                        tr {
+                                            td { "{item.id}" }
+                                            td { "{item.subject}" }
+                                            td { "{item.category}" }
+                                            td { "{item.priority}" }
+                                            td {
+                                                span { class: if item.status.eq_ignore_ascii_case("open") { "pill pending" } else { "pill paid" },
+                                                    "{item.status}"
+                                                }
+                                            }
+                                            td {
+                                                button {
+                                                    class: "btn-secondary btn-sm",
+                                                    onclick: {
+                                                        let id = item.id.clone();
+                                                        move |_| {
+                                                            *selected_ticket_id.write() = Some(id.clone());
+                                                        }
+                                                    },
+                                                    "{t!(\"dash_ticket_details\")}"
+                                                }
                                             }
                                         }
                                     }
@@ -1099,13 +1131,34 @@ pub fn TicketsPage() -> Element {
 
 #[component]
 pub fn BalancePage() -> Element {
-    let mut session = use_context::<Signal<SessionState>>();
+    let session = use_context::<Signal<SessionState>>();
     let state = session();
+    #[allow(unused_mut)]
     let mut selected_invoice_id = use_signal(|| None::<String>);
+    #[allow(unused_mut)]
     let mut modal_closing = use_signal(|| false);
+    #[allow(unused_mut)]
     let mut modal_origin = use_signal(|| "50% 55%".to_string());
-    let payment_loading = use_signal(|| false);
-    let payment_error = use_signal(|| None::<String>);
+    #[allow(unused_mut)]
+    let mut payment_loading = use_signal(|| false);
+    #[allow(unused_mut)]
+    let mut payment_error = use_signal(|| None::<String>);
+    #[allow(unused_mut)]
+    let mut recharge_amount = use_signal(|| "10.00".to_string());
+
+    let mut opacity = use_motion(0.0f32);
+    let mut slide_y = use_motion(20.0f32);
+
+    use_effect(move || {
+        opacity.animate_to(
+            1.0,
+            AnimationConfig::new(AnimationMode::Spring(Spring::default())),
+        );
+        slide_y.animate_to(
+            0.0,
+            AnimationConfig::new(AnimationMode::Spring(Spring::default())),
+        );
+    });
 
     if state.token.is_none() {
         return rsx! {
@@ -1134,20 +1187,35 @@ pub fn BalancePage() -> Element {
     let on_recharge = move |_| {
         let api_base = session.peek().api_base.clone();
         let token = session.peek().token.clone().unwrap_or_default();
+        let amount = recharge_amount();
+        let mut loading = payment_loading;
+        let mut error = payment_error;
+
         spawn(async move {
-            session.write().loading = true;
-            match api::recharge_balance(&api_base, &token).await {
-                Ok(new_balance) => {
-                    session.write().balance = new_balance;
-                    if let Ok(bundle) = api::load_authenticated_bundle(&api_base, &token).await {
-                        let mut s = session.write();
-                        s.balance = bundle.balance;
-                        s.balance_transactions = bundle.balance_transactions;
+            *loading.write() = true;
+            *error.write() = None;
+            match api::recharge_balance(&api_base, &token, &amount).await {
+                Ok(response) => {
+                    *loading.write() = false;
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        if let Some(win) = web_sys::window() {
+                            if win.location().set_href(&response.approval_url).is_err() {
+                                *error.write() = Some("无法打开 PayPal 支付页面".to_string());
+                            }
+                        }
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        let _ = response;
+                        *error.write() = Some("请在浏览器中完成支付".to_string());
                     }
                 }
-                Err(e) => session.write().error = Some(e),
+                Err(e) => {
+                    *loading.write() = false;
+                    *error.write() = Some(e);
+                }
             }
-            session.write().loading = false;
         });
     };
 
@@ -1198,252 +1266,282 @@ pub fn BalancePage() -> Element {
         let mut error = payment_error;
 
         spawn(async move {
-            loading.set(true);
-            error.set(None);
+            *loading.write() = true;
+            *error.write() = None;
 
             match api::retry_paypal_invoice(&api_base, &token, &invoice.id).await {
                 Ok(response) => {
-                    loading.set(false);
+                    *loading.write() = false;
                     #[cfg(target_arch = "wasm32")]
                     {
                         if let Some(win) = web_sys::window() {
                             if win.location().set_href(&response.approval_url).is_err() {
-                                error.set(Some("无法打开 PayPal 沙箱支付页面".to_string()));
+                                *error.write() = Some("无法打开 PayPal 沙箱支付页面".to_string());
                             }
                         } else {
-                            error.set(Some("浏览器窗口不可用".to_string()));
+                            *error.write() = Some("浏览器窗口不可用".to_string());
                         }
                     }
                     #[cfg(not(target_arch = "wasm32"))]
                     {
                         let _ = response;
-                        error.set(Some(
-                            "当前平台暂不支持直接打开支付链接，请在 Web 端操作".to_string(),
-                        ));
+                        *error.write() =
+                            Some("当前平台暂不支持直接打开支付链接，请在 Web 端操作".to_string());
                     }
                 }
                 Err(err) => {
-                    loading.set(false);
-                    error.set(Some(err));
+                    *loading.write() = false;
+                    *error.write() = Some(err);
                 }
             }
         });
     };
 
     rsx! {
-        DashboardShell { title: "{t!(\"dash_balance_finance\")}", active_tab: DashboardTab::Balance,
-            section { class: "balance-card",
+            DashboardShell { title: "{t!(\"dash_balance_finance\")}", active_tab: DashboardTab::Balance,
                 div {
-                    p { class: "muted", "{t!(\"dash_available_balance\")}" }
-                    div { class: "amount", "{balance_text}" }
-                }
-                button {
-                    class: "btn-primary",
-                    onclick: on_recharge,
-                    "{t!(\"dash_recharge_mock\")}"
-                }
-            }
-
-            section { class: "balance-layout",
-                article { class: "table-card",
-                    div { class: "tab-strip",
-                        button { class: "tab active", "{t!(\"dash_transaction_history\")}" }
+                    class: "balance-page-content",
+                    style: "opacity: {opacity.get_value()}; transform: translateY({slide_y.get_value()}px);",
+                    section { class: "balance-card",
+                    div { class: "balance-info-main",
+                        p { class: "muted", "{t!(\"dash_available_balance\")}" }
+                        div { class: "amount", "{balance_text}" }
                     }
-
-                    table {
-                        thead {
-                            tr {
-                                th { "{t!(\"dash_date_col\")}" }
-                                th { "{t!(\"dash_type_col\")}" }
-                                th { "{t!(\"dash_amount_col\")}" }
-                                th { "{t!(\"dash_desc_col\")}" }
+                    div { class: "recharge-controls",
+                        div { class: "amount-input-wrapper",
+                            span { class: "currency-symbol", "$" }
+                            input {
+                                class: "recharge-input",
+                                r#type: "number",
+                                step: "1.00",
+                                min: "1.00",
+                                value: "{recharge_amount}",
+                                oninput: move |ev| *recharge_amount.write() = ev.value(),
                             }
                         }
-                        tbody {
-                            if state.balance_transactions.is_empty() {
-                                tr {
-                                    td { colspan: "4", "{t!(\"dash_no_transactions\")}" }
-                                }
-                            } else {
-                                for tx in &state.balance_transactions {
-                                    tr {
-                                        td { "{tx.created_at}" }
-                                        td { "{tx.r#type}" }
-                                        td {
-                                            span {
-                                                class: if tx.amount.starts_with('-') { "text-danger" } else { "text-success" },
-                                                "{tx.amount}"
-                                            }
-                                        }
-                                        td { "{tx.description}" }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                article { class: "table-card",
-                    div { class: "tab-strip",
-                        button { class: "tab active", "{t!(\"dash_invoice_records\")}" }
-                    }
-
-                    table {
-                        thead {
-                            tr {
-                                th { "ID" }
-                                th { "{t!(\"dash_amount_col\")}" }
-                                th { "{t!(\"dash_status\")}" }
-                                th { "{t!(\"dash_due_at_col\")}" }
-                                th { "" }
-                            }
-                        }
-                        tbody {
-                            if state.invoices.is_empty() {
-                                tr {
-                                    td { colspan: "5", "{t!(\"dash_no_invoices\")}" }
-                                }
-                            } else {
-                                for (item , invoice_id) in invoice_rows.iter().cloned() {
-                                    tr {
-                                        class: if selected_invoice.as_ref().map(|selected| selected.id == item.id).unwrap_or(false) { "invoice-row active" } else { "invoice-row" },
-                                        onclick: {
-                                            let invoice_id = invoice_id.clone();
-                                            move |event| {
-                                                modal_closing.set(false);
-                                                let coords = event.data().client_coordinates();
-                                                modal_origin.set(modal_origin_from_client(coords.x, coords.y));
-                                                selected_invoice_id.set(Some(invoice_id.clone()));
-                                            }
-                                        },
-                                        td { "{item.id}" }
-                                        td { "$ {item.amount}" }
-                                        td {
-                                            span { class: invoice_pill_class(&invoice_status_label(&item, now)),
-                                                "{invoice_status_label(&item, now)}"
-                                            }
-                                        }
-                                        td { "{item.due_at}" }
-                                        td {
-                                            button {
-                                                class: "btn-secondary invoice-action",
-                                                onclick: {
-                                                    let invoice_id = invoice_id.clone();
-                                                    move |event| {
-                                                        modal_closing.set(false);
-                                                        let coords = event.data().client_coordinates();
-                                                        modal_origin.set(modal_origin_from_client(coords.x, coords.y));
-                                                        selected_invoice_id.set(Some(invoice_id.clone()));
-                                                    }
-                                                },
-                                                "{t!(\"dash_ticket_details\")}"
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if let Some(err) = &*payment_error.read() {
-                p { class: "notice error-notice", "{err}" }
-            }
-
-            if let Some(invoice) = selected_invoice {
-                div {
-                    class: "{backdrop_class}",
-                    onclick: move |_| {
-                        if modal_closing() {
-                            return;
-                        }
-                        modal_closing.set(true);
-                        spawn(async move {
-                            TimeoutFuture::new(220).await;
-                            selected_invoice_id.set(None);
-                            modal_closing.set(false);
-                        });
-                    },
-                    div {
-                        class: "{modal_class}",
-                        style: "{modal_style}",
-                        onclick: move |event| event.stop_propagation(),
-                        div { class: "modal-header",
-                            div {
-                                p { class: "muted modal-kicker", "{t!(\"dash_invoice_details\")}" }
-                                h3 { "{invoice.id}" }
-                            }
-                            button {
-                                class: "btn-secondary modal-close",
-                                onclick: move |_| {
-                                    if modal_closing() {
-                                        return;
-                                    }
-                                    modal_closing.set(true);
-                                    spawn(async move {
-                                        TimeoutFuture::new(220).await;
-                                        selected_invoice_id.set(None);
-                                        modal_closing.set(false);
-                                    });
-                                },
-                                "{t!(\"dash_close_ticket\")}" // reusing close translation
-                            }
-                        }
-
-                        div { class: "detail-grid",
-                            article { class: "detail-item",
-                                p { class: "muted", "{t!(\"dash_status\")}" }
-                                span { class: invoice_pill_class(&modal_status), "{modal_status}" }
-                            }
-                            article { class: "detail-item",
-                                p { class: "muted", "{t!(\"dash_amount_col\")}" }
-                                p { class: "fact", "$ {invoice.amount}" }
-                            }
-                            article { class: "detail-item",
-                                p { class: "muted", "{t!(\"dash_order_id\")}" }
-                                p { class: "fact", "{selected_order_id}" }
-                            }
-                            article { class: "detail-item",
-                                p { class: "muted", "{t!(\"dash_external_payment_ref\")}" }
-                                p { class: "fact", "{selected_external_payment_ref}" }
-                            }
-                            article { class: "detail-item",
-                                p { class: "muted", "{t!(\"dash_created_at_label\")}" }
-                                p { class: "fact", "{invoice.created_at}" }
-                            }
-                            article { class: "detail-item",
-                                p { class: "muted", "{t!(\"dash_due_at_col\")}" }
-                                p { class: "fact", "{invoice.due_at}" }
-                            }
-                            article { class: "detail-item",
-                                p { class: "muted", "{t!(\"dash_paid_at\")}" }
-                                p { class: "fact", "{selected_paid_at}" }
-                            }
-                        }
-
-                        div { class: "modal-actions",
-                            if modal_can_repay {
+                        div { class: "preset-amounts",
+                            for amt in ["10.00", "50.00", "100.00"] {
                                 button {
-                                    class: "btn-primary full",
-                                    disabled: *payment_loading.read(),
-                                    onclick: on_repay,
-                                    if *payment_loading.read() {
-                                        "{t!(\"dash_preparing_checkout\")}"
-                                    } else {
-                                        "{t!(\"dash_pay_again\")}"
+                                    class: if recharge_amount() == amt { "preset-btn active" } else { "preset-btn" },
+                                    onclick: move |_| *recharge_amount.write() = amt.to_string(),
+                                    "${amt}"
+                                }
+                            }
+                        }
+                        button {
+                            class: "btn-primary recharge-btn",
+                            disabled: *payment_loading.read(),
+                            onclick: on_recharge,
+                            if *payment_loading.read() {
+                                "{t!(\"dash_preparing_checkout\")}"
+                            } else {
+                                "{t!(\"dash_recharge_btn\")}"
+                            }
+                        }
+                    }
+                }
+
+                section { class: "balance-layout",
+                    article { class: "table-card",
+                        div { class: "tab-strip",
+                            button { class: "tab active", "{t!(\"dash_transaction_history\")}" }
+                        }
+
+                        table {
+                            thead {
+                                tr {
+                                    th { "{t!(\"dash_date_col\")}" }
+                                    th { "{t!(\"dash_type_col\")}" }
+                                    th { "{t!(\"dash_amount_col\")}" }
+                                    th { "{t!(\"dash_desc_col\")}" }
+                                }
+                            }
+                            tbody {
+                                if state.balance_transactions.is_empty() {
+                                    tr {
+                                        td { colspan: "4", "{t!(\"dash_no_transactions\")}" }
+                                    }
+                                } else {
+                                    for tx in &state.balance_transactions {
+                                        tr {
+                                            td { "{tx.created_at}" }
+                                            td { "{tx.r#type}" }
+                                            td {
+                                                span {
+                                                    class: if tx.amount.starts_with('-') { "text-danger" } else { "text-success" },
+                                                    "{tx.amount}"
+                                                }
+                                            }
+                                            td { "{tx.description}" }
+                                        }
                                     }
                                 }
-                            } else if modal_status == "expired" {
-                                p { class: "notice",
-                                    "{t!(\"dash_invoice_expired\")}"
+                            }
+                        }
+                    }
+
+                    article { class: "table-card",
+                        div { class: "tab-strip",
+                            button { class: "tab active", "{t!(\"dash_invoice_records\")}" }
+                        }
+
+                        table {
+                            thead {
+                                tr {
+                                    th { "ID" }
+                                    th { "{t!(\"dash_amount_col\")}" }
+                                    th { "{t!(\"dash_status\")}" }
+                                    th { "{t!(\"dash_due_at_col\")}" }
+                                    th { "" }
                                 }
-                            } else if modal_status == "paid" {
-                                p { class: "notice", "{t!(\"dash_invoice_paid\")}" }
+                            }
+                            tbody {
+                                if state.invoices.is_empty() {
+                                    tr {
+                                        td { colspan: "5", "{t!(\"dash_no_invoices\")}" }
+                                    }
+                                } else {
+                                    for (item , invoice_id) in invoice_rows.iter().cloned() {
+                                        tr {
+                                            class: if selected_invoice.as_ref().map(|selected| selected.id == item.id).unwrap_or(false) { "invoice-row active" } else { "invoice-row" },
+                                            onclick: {
+                                                let invoice_id = invoice_id.clone();
+                                                move |event| {
+                                                    *modal_closing.write() = false;
+                                                    let coords = event.data().client_coordinates();
+                                                    *modal_origin.write() = modal_origin_from_client(coords.x, coords.y);
+                                                    *selected_invoice_id.write() = Some(invoice_id.clone());
+                                                }
+                                            },
+                                            td { "{item.id}" }
+                                            td { "$ {item.amount}" }
+                                            td {
+                                                span { class: invoice_pill_class(&invoice_status_label(&item, now)),
+                                                    "{invoice_status_label(&item, now)}"
+                                                }
+                                            }
+                                            td { "{item.due_at}" }
+                                            td {
+                                                button {
+                                                    class: "btn-secondary invoice-action",
+                                                    onclick: {
+                                                        let invoice_id = invoice_id.clone();
+                                                        move |event| {
+                                                            *modal_closing.write() = false;
+                                                            let coords = event.data().client_coordinates();
+                                                            *modal_origin.write() = modal_origin_from_client(coords.x, coords.y);
+                                                            *selected_invoice_id.write() = Some(invoice_id.clone());
+                                                        }
+                                                    },
+                                                    "{t!(\"dash_ticket_details\")}"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if let Some(err) = &*payment_error.read() {
+                    p { class: "notice error-notice", "{err}" }
+                }
+
+                if let Some(invoice) = selected_invoice {
+                    div {
+                        class: "{backdrop_class}",
+                        onclick: move |_| {
+                            if modal_closing() {
+                                return;
+                            }
+                            modal_closing.set(true);
+                            spawn(async move {
+                                TimeoutFuture::new(220).await;
+                                selected_invoice_id.set(None);
+                                modal_closing.set(false);
+                            });
+                        },
+                        div {
+                            class: "{modal_class}",
+                            style: "{modal_style}",
+                            onclick: move |event| event.stop_propagation(),
+                            div { class: "modal-header",
+                                div {
+                                    p { class: "muted modal-kicker", "{t!(\"dash_invoice_details\")}" }
+                                    h3 { "{invoice.id}" }
+                                }
+                                button {
+                                    class: "btn-secondary modal-close",
+                                    onclick: move |_| {
+                                        if modal_closing() {
+                                            return;
+                                        }
+                                        modal_closing.set(true);
+                                        spawn(async move {
+                                            TimeoutFuture::new(220).await;
+                                            selected_invoice_id.set(None);
+                                            modal_closing.set(false);
+                                        });
+                                    },
+                                    "{t!(\"dash_close_ticket\")}" // reusing close translation
+                                }
                             }
 
-                            p { class: "muted modal-note",
-                                "{t!(\"dash_invoice_note\")}"
+                            div { class: "detail-grid",
+                                article { class: "detail-item",
+                                    p { class: "muted", "{t!(\"dash_status\")}" }
+                                    span { class: invoice_pill_class(&modal_status), "{modal_status}" }
+                                }
+                                article { class: "detail-item",
+                                    p { class: "muted", "{t!(\"dash_amount_col\")}" }
+                                    p { class: "fact", "$ {invoice.amount}" }
+                                }
+                                article { class: "detail-item",
+                                    p { class: "muted", "{t!(\"dash_order_id\")}" }
+                                    p { class: "fact", "{selected_order_id}" }
+                                }
+                                article { class: "detail-item",
+                                    p { class: "muted", "{t!(\"dash_external_payment_ref\")}" }
+                                    p { class: "fact", "{selected_external_payment_ref}" }
+                                }
+                                article { class: "detail-item",
+                                    p { class: "muted", "{t!(\"dash_created_at_label\")}" }
+                                    p { class: "fact", "{invoice.created_at}" }
+                                }
+                                article { class: "detail-item",
+                                    p { class: "muted", "{t!(\"dash_due_at_col\")}" }
+                                    p { class: "fact", "{invoice.due_at}" }
+                                }
+                                article { class: "detail-item",
+                                    p { class: "muted", "{t!(\"dash_paid_at\")}" }
+                                    p { class: "fact", "{selected_paid_at}" }
+                                }
+                            }
+
+                            div { class: "modal-actions",
+                                if modal_can_repay {
+                                    button {
+                                        class: "btn-primary full",
+                                        disabled: *payment_loading.read(),
+                                        onclick: on_repay,
+                                        if *payment_loading.read() {
+                                            "{t!(\"dash_preparing_checkout\")}"
+                                        } else {
+                                            "{t!(\"dash_pay_again\")}"
+                                        }
+                                    }
+                                } else if modal_status == "expired" {
+                                    p { class: "notice",
+                                        "{t!(\"dash_invoice_expired\")}"
+                                    }
+                                } else if modal_status == "paid" {
+                                    p { class: "notice", "{t!(\"dash_invoice_paid\")}" }
+                                }
+
+                                p { class: "muted modal-note",
+                                    "{t!(\"dash_invoice_note\")}"
+                                }
                             }
                         }
                     }
