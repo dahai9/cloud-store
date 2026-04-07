@@ -13,7 +13,7 @@ pub fn InstancesPage() -> Element {
 
         spawn(async move {
             session.write().loading = true;
-            match api::get_instances(&api_base, &token).await {
+            match api::get_instances(&api_base, &token, None).await {
                 Ok(instances) => {
                     let mut s = session.write();
                     s.instances = instances;
@@ -99,7 +99,7 @@ pub fn InstancesPage() -> Element {
                                                         match api::delete_instance(&api_base, &token, &id, &payload).await {
                                                             Ok(_) => {
                                                                 session.write().notice = Some(t!("instances_action_success"));
-                                                                if let Ok(instances) = api::get_instances(&api_base, &token).await {
+                                                                if let Ok(instances) = api::get_instances(&api_base, &token, None).await {
                                                                     session.write().instances = instances;
                                                                 }
                                                             }

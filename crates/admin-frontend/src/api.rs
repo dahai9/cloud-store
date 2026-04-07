@@ -176,10 +176,19 @@ pub async fn update_node(
         .map_err(|e| format!("Failed to parse response: {e}"))
 }
 
-pub async fn get_instances(api_base: &str, token: &str) -> Result<Vec<InstanceItem>, String> {
+pub async fn get_instances(
+    api_base: &str,
+    token: &str,
+    user_id: Option<String>,
+) -> Result<Vec<InstanceItem>, String> {
     let client = Client::new();
+    let mut url = format!("{api_base}/api/admin/instances");
+    if let Some(uid) = user_id {
+        url = format!("{url}?user_id={}", urlencoding::encode(&uid));
+    }
+
     let resp = client
-        .get(format!("{api_base}/api/admin/instances"))
+        .get(url)
         .header("Authorization", &format!("Bearer {token}"))
         .send()
         .await
@@ -192,6 +201,27 @@ pub async fn get_instances(api_base: &str, token: &str) -> Result<Vec<InstanceIt
     resp.json::<Vec<InstanceItem>>()
         .await
         .map_err(|e| format!("Failed to parse instances: {e}"))
+}
+
+pub async fn perform_instance_action(
+    api_base: &str,
+    token: &str,
+    instance_id: &str,
+    payload: &crate::models::ActionRequest,
+) -> Result<(), String> {
+    let client = Client::new();
+    let resp = client
+        .post(format!("{api_base}/api/admin/instances/{instance_id}/action"))
+        .header("Authorization", &format!("Bearer {token}"))
+        .json(payload)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Perform action failed: {}", resp.status()));
+    }
+    Ok(())
 }
 
 #[allow(dead_code)]

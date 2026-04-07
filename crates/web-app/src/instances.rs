@@ -516,7 +516,7 @@ pub struct ActionResponse {
     pub new_password: Option<String>,
 }
 
-fn generate_strong_password(length: usize) -> String {
+pub fn generate_strong_password(length: usize) -> String {
     use rand::distributions::Alphanumeric;
     use rand::{thread_rng, Rng};
 
@@ -781,7 +781,7 @@ pub async fn get_console(
     Ok(Json(token))
 }
 
-async fn update_status(
+pub async fn update_status(
     state: &AppState,
     id: &str,
     status: InstanceStatus,

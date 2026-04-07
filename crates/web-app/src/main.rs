@@ -276,6 +276,10 @@ fn build_admin_router(app_state: AppState) -> Router {
             "/api/admin/instances/{instance_id}",
             delete(admin::admin_delete_instance),
         )
+        .route(
+            "/api/admin/instances/{instance_id}/action",
+            post(admin::admin_perform_action),
+        )
         .route("/api/admin/plans", get(admin::list_plans))
         .route("/api/admin/plans", post(admin::add_plan))
         .route("/api/admin/plans/{plan_id}", patch(admin::update_plan))

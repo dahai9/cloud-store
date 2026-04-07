@@ -4,7 +4,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use serde::{Deserialize, Serialize};
-use tracing::error;
+use tracing::{error, info};
 
 const UNLIMITED_TRAFFIC_GB: i64 = -1;
 
@@ -1047,30 +1047,57 @@ pub async fn delete_nat_port_lease(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[derive(Deserialize)]
+pub struct InstanceSearchQuery {
+    pub user_id: Option<String>,
+}
+
 pub async fn list_instances(
     State(state): State<AppState>,
+    Query(query): Query<InstanceSearchQuery>,
     headers: HeaderMap,
 ) -> Result<Json<Vec<InstanceItem>>, (StatusCode, &'static str)> {
     let _ = auth::require_admin(&headers, &state).await?;
 
-    let rows = sqlx::query_as::<_, (String, String, String, String, String, String, String)>(
-        "SELECT 
-            i.id, 
-            u.email as user_email, 
-            n.name as node_name, 
-            p.name as plan_name, 
-            i.status, 
-            i.os_template, 
-            i.created_at 
-        FROM instances i
-        JOIN users u ON i.user_id = u.id
-        JOIN nodes n ON i.node_id = n.id
-        JOIN nat_plans p ON i.plan_id = p.id
-        ORDER BY i.created_at DESC LIMIT 500",
-    )
-    .fetch_all(&state.db)
-    .await
-    .map_err(|err| {
+    let rows = if let Some(user_id) = query.user_id {
+        sqlx::query_as::<_, (String, String, String, String, String, String, String)>(
+            "SELECT 
+                i.id, 
+                u.email as user_email, 
+                n.name as node_name, 
+                p.name as plan_name, 
+                i.status, 
+                i.os_template, 
+                i.created_at 
+            FROM instances i
+            JOIN users u ON i.user_id = u.id
+            JOIN nodes n ON i.node_id = n.id
+            JOIN nat_plans p ON i.plan_id = p.id
+            WHERE i.user_id = ?
+            ORDER BY i.created_at DESC LIMIT 500",
+        )
+        .bind(&user_id)
+        .fetch_all(&state.db)
+        .await
+    } else {
+        sqlx::query_as::<_, (String, String, String, String, String, String, String)>(
+            "SELECT 
+                i.id, 
+                u.email as user_email, 
+                n.name as node_name, 
+                p.name as plan_name, 
+                i.status, 
+                i.os_template, 
+                i.created_at 
+            FROM instances i
+            JOIN users u ON i.user_id = u.id
+            JOIN nodes n ON i.node_id = n.id
+            JOIN nat_plans p ON i.plan_id = p.id
+            ORDER BY i.created_at DESC LIMIT 500",
+        )
+        .fetch_all(&state.db)
+        .await
+    }.map_err(|err| {
         error!(error = %err, "failed to list instances");
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -1097,3 +1124,146 @@ pub async fn list_instances(
 
     Ok(Json(items))
 }
+
+pub async fn admin_perform_action(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(payload): Json<crate::instances::ActionRequest>,
+) -> Result<Json<crate::instances::ActionResponse>, (StatusCode, &'static str)> {
+    let admin = auth::require_admin(&headers, &state).await?;
+
+    let row = sqlx::query_as::<_, (String, Option<String>, String, Option<String>)>(
+        "SELECT i.id, i.provider_instance_id, n.api_endpoint, n.api_token
+            FROM instances i
+            JOIN nodes n ON i.node_id = n.id
+         WHERE i.id = ? LIMIT 1",
+    )
+    .bind(&id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|err| {
+        error!(error = %err, instance_id = %id, "failed to query instance for admin action");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to process action",
+        )
+    })?
+    .ok_or((StatusCode::NOT_FOUND, "instance not found"))?;
+
+    let provider_instance_id = row
+        .1
+        .ok_or((StatusCode::BAD_REQUEST, "instance is not provisioned"))?;
+    let node_conn = provider_adapter::NodeConnection {
+        endpoint: row.2,
+        token: row.3,
+    };
+
+    let provider = provider_adapter::IncusProvider::new().map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to initialize provider",
+        )
+    })?;
+
+    let mut response_password = None;
+    use crate::instances::InstanceAction;
+    use shared_domain::{InstanceStatus, DEFAULT_OS_TEMPLATE};
+    use provider_adapter::ComputeProvider;
+
+    let action_str = match &payload.action {
+        InstanceAction::Start => "start",
+        InstanceAction::Stop => "stop",
+        InstanceAction::Restart => "restart",
+        InstanceAction::ResetPassword { .. } => "reset_password",
+        InstanceAction::Reinstall { .. } => "reinstall",
+    };
+
+    let result = match payload.action {
+        InstanceAction::Start => {
+            let res = provider
+                .start_instance(&node_conn, &provider_instance_id)
+                .await;
+            if res.is_ok() {
+                let _ = crate::instances::update_status(&state, &id, InstanceStatus::Starting).await;
+            }
+            res.map_err(|e| e.to_string())
+        }
+        InstanceAction::Stop => {
+            let res = provider
+                .stop_instance(&node_conn, &provider_instance_id)
+                .await;
+            if res.is_ok() {
+                let _ = crate::instances::update_status(&state, &id, InstanceStatus::Stopped).await;
+            }
+            res.map_err(|e| e.to_string())
+        }
+        InstanceAction::Restart => {
+            let res = provider
+                .restart_instance(&node_conn, &provider_instance_id)
+                .await;
+            if res.is_ok() {
+                let _ = crate::instances::update_status(&state, &id, InstanceStatus::Starting).await;
+            }
+            res.map_err(|e| e.to_string())
+        }
+        InstanceAction::ResetPassword { new_password } => {
+            let pwd = new_password.unwrap_or_else(|| crate::instances::generate_strong_password(11));
+            let res = provider
+                .reset_password(&node_conn, &provider_instance_id, &pwd)
+                .await;
+
+            if res.is_ok() {
+                let _ = sqlx::query("UPDATE instances SET root_password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+                    .bind(&pwd)
+                    .bind(&id)
+                    .execute(&state.db)
+                    .await;
+                response_password = Some(pwd);
+                Ok(())
+            } else {
+                res.map_err(|e| e.to_string())
+            }
+        }
+        InstanceAction::Reinstall { os_template } => {
+            let template = os_template.unwrap_or_else(|| DEFAULT_OS_TEMPLATE.to_string());
+            let res = provider
+                .reinstall_instance(&node_conn, &provider_instance_id, &template)
+                .await;
+            if res.is_ok() {
+                let _ = crate::instances::update_status(&state, &id, InstanceStatus::Pending).await;
+            }
+            res.map_err(|e| e.to_string())
+        }
+    };
+
+    match result {
+        Ok(_) => {
+            info!(
+                admin_id = %admin.id,
+                resource_type = "instance",
+                resource_id = %id,
+                action = %action_str,
+                status = "success",
+                "admin action performed"
+            );
+            Ok(Json(crate::instances::ActionResponse {
+                message: "Action accepted".to_string(),
+                new_password: response_password,
+            }))
+        }
+        Err(err) => {
+            error!(
+                admin_id = %admin.id,
+                resource_type = "instance",
+                resource_id = %id,
+                action = %action_str,
+                status = "failed",
+                error = %err,
+                "admin action failed"
+            );
+            Err((StatusCode::INTERNAL_SERVER_ERROR, "action failed"))
+        }
+    }
+}
+

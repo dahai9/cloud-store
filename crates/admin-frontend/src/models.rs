@@ -183,6 +183,21 @@ pub struct AdminInstanceCreateRequest {
     pub node_id: Option<String>,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum InstanceAction {
+    Start,
+    Stop,
+    Restart,
+    ResetPassword { new_password: Option<String> },
+    Reinstall { os_template: Option<String> },
+}
+
+#[derive(Clone, Serialize)]
+pub struct ActionRequest {
+    pub action: InstanceAction,
+}
+
 #[derive(Clone, Serialize)]
 #[allow(dead_code)]
 pub struct AdminInstanceDeleteRequest {
