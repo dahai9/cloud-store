@@ -7,6 +7,7 @@ license.workspace = true
 [dependencies]
 chrono.workspace = true
 dioxus = { workspace = true, features = ["router", "web"] }
+dioxus-motion.workspace = true
 reqwest = { workspace = true }
 gloo-timers = { version = "0.3", features = ["futures"] }
 serde.workspace = true

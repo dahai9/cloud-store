@@ -5,6 +5,7 @@ use crate::models::{Route, SessionState};
 use dioxus::prelude::*;
 use dioxus_i18n::prelude::*;
 use dioxus_i18n::t;
+use dioxus_motion::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
 use web_sys::window;
@@ -14,6 +15,20 @@ pub fn StorefrontPage() -> Element {
     let navigator = use_navigator();
     let mut session = use_context::<Signal<SessionState>>();
     let is_logged_in = session().token.is_some();
+
+    let mut hero_opacity = use_motion(0.0f32);
+    let mut hero_y = use_motion(20.0f32);
+
+    use_effect(move || {
+        hero_opacity.animate_to(
+            1.0,
+            AnimationConfig::new(AnimationMode::Spring(Spring::default())),
+        );
+        hero_y.animate_to(
+            0.0,
+            AnimationConfig::new(AnimationMode::Spring(Spring::default())),
+        );
+    });
 
     use_effect(move || {
         if session().public_plans.is_empty() {
@@ -90,7 +105,7 @@ pub fn StorefrontPage() -> Element {
             }
 
             main { class: "public-main",
-                section { class: "hero",
+                section { class: "hero", style: "opacity: {hero_opacity.get_value()}; transform: translateY({hero_y.get_value()}px);",
                     h2 { "{t!(\"hero_title\")}" }
                     p {
                         "{t!(\"hero_desc\")}"
@@ -104,31 +119,10 @@ pub fn StorefrontPage() -> Element {
 
                 section { class: "product-grid",
                     for (i , plan) in session().public_plans.iter().enumerate() {
-                        article { class: "product-card", key: "{plan.id}",
-                            div { class: "tag",
-                                if i == 0 {
-                                    "{t!(\"plan_starter\")}"
-                                } else if i == 1 {
-                                    "{t!(\"plan_popular\")}"
-                                } else {
-                                    "{t!(\"plan_business\")}"
-                                }
-                            }
-                            h3 { "{plan.name}" }
-                            p {
-                                {t!("plan_spec", cores: plan.cpu_cores, cpu_pct: plan.cpu_allowance_pct, mem: plan.memory_mb, disk: plan.storage_gb, bw: plan.bandwidth_mbps, traffic: format_traffic_gb(plan.traffic_gb))}
-                            }
-                            div { class: "price", {t!("price_per_month", price: plan.monthly_price.clone())} }
-                            button {
-                                class: "btn-secondary full",
-                                onclick: {
-                                    let code = plan.code.clone();
-                                    move |_| {
-                                        navigator.push(Route::OrderPage { plan: code.clone() });
-                                    }
-                                },
-                                "{t!(\"select_btn\")}"
-                            }
+                        AnimatedProductCard {
+                            key: "{plan.id}",
+                            i: i,
+                            plan: plan.clone()
                         }
                     }
                 }
@@ -148,9 +142,75 @@ pub fn StorefrontPage() -> Element {
 }
 
 #[component]
+pub fn AnimatedProductCard(i: usize, plan: crate::models::PublicPlanItem) -> Element {
+    let navigator = use_navigator();
+    let mut opacity = use_motion(0.0f32);
+    let mut slide_y = use_motion(20.0f32);
+
+    use_effect(move || {
+        spawn(async move {
+            gloo_timers::future::TimeoutFuture::new((i * 100) as u32).await;
+            opacity.animate_to(
+                1.0,
+                AnimationConfig::new(AnimationMode::Spring(Spring::default())),
+            );
+            slide_y.animate_to(
+                0.0,
+                AnimationConfig::new(AnimationMode::Spring(Spring::default())),
+            );
+        });
+    });
+
+    rsx! {
+        article {
+            class: "product-card",
+            style: "opacity: {opacity.get_value()}; transform: translateY({slide_y.get_value()}px);",
+            div { class: "tag",
+                if i == 0 {
+                    "{t!(\"plan_starter\")}"
+                } else if i == 1 {
+                    "{t!(\"plan_popular\")}"
+                } else {
+                    "{t!(\"plan_business\")}"
+                }
+            }
+            h3 { "{plan.name}" }
+            p {
+                {t!("plan_spec", cores: plan.cpu_cores, cpu_pct: plan.cpu_allowance_pct, mem: plan.memory_mb, disk: plan.storage_gb, bw: plan.bandwidth_mbps, traffic: format_traffic_gb(plan.traffic_gb))}
+            }
+            div { class: "price", {t!("price_per_month", price: plan.monthly_price.clone())} }
+            button {
+                class: "btn-secondary full",
+                onclick: {
+                    let code = plan.code.clone();
+                    move |_| {
+                        navigator.push(Route::OrderPage { plan: code.clone() });
+                    }
+                },
+                "{t!(\"select_btn\")}"
+            }
+        }
+    }
+}
+
+#[component]
 pub fn OrderPage(plan: String) -> Element {
     let navigator = use_navigator();
     let mut session = use_context::<Signal<SessionState>>();
+
+    let mut opacity = use_motion(0.0f32);
+    let mut slide_y = use_motion(20.0f32);
+
+    use_effect(move || {
+        opacity.animate_to(
+            1.0,
+            AnimationConfig::new(AnimationMode::Spring(Spring::default())),
+        );
+        slide_y.animate_to(
+            0.0,
+            AnimationConfig::new(AnimationMode::Spring(Spring::default())),
+        );
+    });
 
     use_effect(move || {
         if session().public_plans.is_empty() {
@@ -261,7 +321,7 @@ pub fn OrderPage(plan: String) -> Element {
             }
 
             main { class: "public-main",
-                section { class: "checkout-card",
+                section { class: "checkout-card", style: "opacity: {opacity.get_value()}; transform: translateY({slide_y.get_value()}px);",
                     h3 { "{t!(\"order_summary_title\")}" }
                     p { class: "muted",
                         "{t!(\"order_summary_desc\")}"

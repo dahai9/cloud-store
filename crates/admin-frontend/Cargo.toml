@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 dioxus = { workspace = true, features = ["router", "web"] }
+dioxus-motion.workspace = true
 dioxus-i18n = "0.5.1"
 reqwest = { workspace = true }
 serde.workspace = true

@@ -6,6 +6,7 @@ use crate::models::{DashboardTab, Route, SessionState};
 use dioxus::prelude::*;
 use dioxus_i18n::prelude::i18n;
 use dioxus_i18n::t;
+use dioxus_motion::prelude::*;
 
 use gloo_timers::future::TimeoutFuture;
 
@@ -106,20 +107,11 @@ pub fn ServicesPage() -> Element {
                     if state.instances.is_empty() {
                         p { class: "muted", "{t!(\"dash_no_instances\")}" }
                     } else {
-                        for item in &state.instances {
-                            Link {
-                                to: Route::InstanceDetailPage {
-                                    id: item.id.clone(),
-                                },
-                                article { class: "service-item",
-                                    div {
-                                        h4 { "{item.plan_id.to_uppercase()} - {item.id}" }
-                                        p { class: "muted", {t!("dash_created_at", time: item.created_at.clone())} }
-                                    }
-                                    span { class: format!("pill {}", instance_status_class(&item.status)),
-                                        {t!("dash_status_label", status: item.status.clone())}
-                                    }
-                                }
+                        for (i, item) in state.instances.iter().enumerate() {
+                            AnimatedServiceItem {
+                                key: "{item.id}",
+                                i: i,
+                                item: item.clone()
                             }
                         }
                     }
@@ -136,6 +128,44 @@ fn instance_status_class(status: &str) -> &'static str {
         "pending" | "starting" => "pending",
         "unknown" => "expired",
         _ => "pending",
+    }
+}
+
+#[component]
+pub fn AnimatedServiceItem(i: usize, item: crate::models::InstanceItem) -> Element {
+    let mut opacity = use_motion(0.0f32);
+    let mut slide_y = use_motion(20.0f32);
+
+    use_effect(move || {
+        spawn(async move {
+            gloo_timers::future::TimeoutFuture::new((i * 100) as u32).await;
+            opacity.animate_to(
+                1.0,
+                AnimationConfig::new(AnimationMode::Spring(Spring::default())),
+            );
+            slide_y.animate_to(
+                0.0,
+                AnimationConfig::new(AnimationMode::Spring(Spring::default())),
+            );
+        });
+    });
+
+    rsx! {
+        Link {
+            to: Route::InstanceDetailPage {
+                id: item.id.clone(),
+            },
+            article { class: "service-item",
+                style: "opacity: {opacity.get_value()}; transform: translateY({slide_y.get_value()}px);",
+                div {
+                    h4 { "{item.plan_id.to_uppercase()} - {item.id}" }
+                    p { class: "muted", {t!("dash_created_at", time: item.created_at.clone())} }
+                }
+                span { class: format!("pill {}", instance_status_class(&item.status)),
+                    {t!("dash_status_label", status: item.status.clone())}
+                }
+            }
+        }
     }
 }
 
@@ -160,6 +190,20 @@ pub fn InstanceDetailPage(id: String) -> Element {
     let mut error = use_signal(|| None::<String>);
     let mut action_loading = use_signal(|| false);
     let mut show_password = use_signal(|| false);
+
+    let mut detail_opacity = use_motion(0.0f32);
+    let mut detail_y = use_motion(10.0f32);
+
+    use_effect(move || {
+        detail_opacity.animate_to(
+            1.0,
+            AnimationConfig::new(AnimationMode::Spring(Spring::default())),
+        );
+        detail_y.animate_to(
+            0.0,
+            AnimationConfig::new(AnimationMode::Spring(Spring::default())),
+        );
+    });
 
     // Initial load
     use_effect({
@@ -349,6 +393,7 @@ pub fn InstanceDetailPage(id: String) -> Element {
             }
 
             section { class: "grid-two",
+                style: "opacity: {detail_opacity.get_value()}; transform: translateY({detail_y.get_value()}px);",
                 article { class: "panel",
                     h4 { "{t!(\"dash_status_info\")}" }
                     div { class: "detail-list",
@@ -417,6 +462,7 @@ pub fn InstanceDetailPage(id: String) -> Element {
                     if let Some(m) = metrics() {
                         div { class: "metrics-grid",
                             MetricCardWithChart {
+                                index: 0,
                                 title: "CPU".to_string(),
                                 value: format!("{:.1}%", m.cpu_usage_percent),
                                 history: metrics_history().iter().map(|mh| mh.cpu_usage_percent).collect(),
@@ -424,6 +470,7 @@ pub fn InstanceDetailPage(id: String) -> Element {
                                 max_val: 100.0,
                             }
                             MetricCardWithChart {
+                                index: 1,
                                 title: "RAM".to_string(),
                                 value: format!("{:.0} MB", m.memory_used_mb),
                                 history: metrics_history().iter().map(|mh| mh.memory_used_mb).collect(),
@@ -432,6 +479,7 @@ pub fn InstanceDetailPage(id: String) -> Element {
                                 max_val: metrics_history().iter().map(|mh| mh.memory_used_mb).fold(0.0, f64::max).max(512.0),
                             }
                             MetricCardWithChart {
+                                index: 2,
                                 title: "TX".to_string(),
                                 value: format!("{:.1} KB/s", (m.network_tx_bytes as f64) / 1024.0),
                                 history: metrics_history().iter().map(|mh| mh.network_tx_bytes as f64).collect(),
@@ -439,6 +487,7 @@ pub fn InstanceDetailPage(id: String) -> Element {
                                 max_val: metrics_history().iter().map(|mh| mh.network_tx_bytes as f64).fold(0.0, f64::max).max(1024.0),
                             }
                             MetricCardWithChart {
+                                index: 3,
                                 title: "RX".to_string(),
                                 value: format!("{:.1} KB/s", (m.network_rx_bytes as f64) / 1024.0),
                                 history: metrics_history().iter().map(|mh| mh.network_rx_bytes as f64).collect(),
@@ -1634,7 +1683,24 @@ fn MetricCardWithChart(
     history: Vec<f64>,
     color: &'static str,
     max_val: f64,
+    index: usize,
 ) -> Element {
+    let mut opacity = use_motion(0.0f32);
+    let mut slide_y = use_motion(20.0f32);
+
+    use_effect(move || {
+        spawn(async move {
+            gloo_timers::future::TimeoutFuture::new((index * 100) as u32).await;
+            opacity.animate_to(
+                1.0,
+                AnimationConfig::new(AnimationMode::Spring(Spring::default())),
+            );
+            slide_y.animate_to(
+                0.0,
+                AnimationConfig::new(AnimationMode::Spring(Spring::default())),
+            );
+        });
+    });
     let width = 200;
     let height = 44;
 
@@ -1678,6 +1744,7 @@ fn MetricCardWithChart(
 
     rsx! {
         div { class: "metric-card-chart",
+            style: "opacity: {opacity.get_value()}; transform: translateY({slide_y.get_value()}px);",
             div { class: "metric-info",
                 p { class: "muted", "{title}" }
                 p { class: "fact", "{value}" }
