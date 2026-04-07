@@ -203,6 +203,7 @@ pub async fn get_instances(
         .map_err(|e| format!("Failed to parse instances: {e}"))
 }
 
+#[allow(dead_code)]
 pub async fn perform_instance_action(
     api_base: &str,
     token: &str,

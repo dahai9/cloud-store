@@ -183,6 +183,7 @@ pub struct AdminInstanceCreateRequest {
     pub node_id: Option<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum InstanceAction {
@@ -193,6 +194,7 @@ pub enum InstanceAction {
     Reinstall { os_template: Option<String> },
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Serialize)]
 pub struct ActionRequest {
     pub action: InstanceAction,

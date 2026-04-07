@@ -155,7 +155,7 @@ pub fn InstanceDetailPage(id: String) -> Element {
 
     let mut instance = use_signal(|| None::<crate::models::InstanceItem>);
     let mut metrics = use_signal(|| None::<crate::models::InstanceMetrics>);
-    let mut metrics_history = use_signal(|| Vec::<crate::models::InstanceMetrics>::new());
+    let mut metrics_history = use_signal(Vec::<crate::models::InstanceMetrics>::new);
     let mut nat_mappings = use_signal(Vec::<crate::models::NatMappingItem>::new);
     let mut error = use_signal(|| None::<String>);
     let mut action_loading = use_signal(|| false);
