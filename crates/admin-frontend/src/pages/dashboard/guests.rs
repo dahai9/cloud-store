@@ -1,6 +1,7 @@
 use crate::api;
 use crate::models::{AdminSessionState, GuestUpdateRequest};
 use dioxus::prelude::*;
+use dioxus_i18n::t;
 
 #[component]
 pub fn GuestsPage() -> Element {
@@ -15,7 +16,7 @@ pub fn GuestsPage() -> Element {
             session.write().loading = true;
             match api::get_guests(&api_base, &token, search).await {
                 Ok(guests) => session.write().guests = guests,
-                Err(e) => session.write().error = Some(format!("刷新失败: {e}")),
+                Err(e) => session.write().error = Some(t!("nodes_error_refresh", err: e)),
             }
             session.write().loading = false;
         });
@@ -31,13 +32,13 @@ pub fn GuestsPage() -> Element {
             };
             match api::update_guest(&api_base, &token, &user_id, &payload).await {
                 Ok(_) => {
-                    session.write().notice = Some("Guest 配置更新成功".to_string());
+                    session.write().notice = Some(t!("plans_update_success")); // Generic update success
                     let search = if search_query().is_empty() { None } else { Some(search_query()) };
                     if let Ok(guests) = api::get_guests(&api_base, &token, search).await {
                         session.write().guests = guests;
                     }
                 }
-                Err(e) => session.write().error = Some(format!("更新失败: {e}")),
+                Err(e) => session.write().error = Some(t!("nodes_error_update", err: e)),
             }
             session.write().loading = false;
         });
@@ -45,11 +46,11 @@ pub fn GuestsPage() -> Element {
 
     rsx! {
         section { class: "card", id: "guests",
-            h2 { "Guest 配置" }
+            h2 { "{t!(\"guests_title\")}" }
             div { class: "actions",
                 input {
                     r#type: "text",
-                    placeholder: "搜索 Email 或 ID...",
+                    placeholder: "{t!(\"guests_search_placeholder\")}",
                     value: "{search_query}",
                     oninput: move |e| search_query.set(e.value()),
                     onkeypress: move |e| {
@@ -58,13 +59,13 @@ pub fn GuestsPage() -> Element {
                         }
                     }
                 }
-                button { class: "btn-secondary", onclick: move |_| refresh_guests(()), "搜索/刷新" }
+                button { class: "btn-secondary", onclick: move |_| refresh_guests(()), "{t!(\"refresh\")}" }
             }
 
-            if session().loading { p { class: "status", "处理中..." } }
+            if session().loading { p { class: "status", "{t!(\"processing\")}" } }
 
             if session().guests.is_empty() {
-                p { class: "status", "暂无 Guest 数据。" }
+                p { class: "status", "{t!(\"guests_no_data\")}" }
             } else {
                 ul { class: "list",
                     for guest in session().guests.clone() {
@@ -86,7 +87,7 @@ pub fn GuestsPage() -> Element {
                                         let next = !guest.disabled;
                                         move |_| toggle_disabled(uid.clone(), next)
                                     },
-                                    if guest.disabled { "启用" } else { "禁用" }
+                                    if guest.disabled { "{t!(\"submit\")}" } else { "{t!(\"delete\")}" } // Generic enable/disable labels from plans logic
                                 }
                             }
                         }
@@ -96,3 +97,5 @@ pub fn GuestsPage() -> Element {
         }
     }
 }
+
+

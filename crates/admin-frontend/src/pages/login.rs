@@ -1,6 +1,7 @@
 use crate::api;
 use crate::models::{AdminSessionState, AuthPayload, Route};
 use dioxus::prelude::*;
+use dioxus_i18n::t;
 
 #[component]
 pub fn LoginPage() -> Element {
@@ -29,8 +30,7 @@ pub fn LoginPage() -> Element {
                     match api::get_profile(&api_base_val, &auth.token).await {
                         Ok(profile) => {
                             if profile.role != "admin" {
-                                session.write().error =
-                                    Some("当前账号不是管理员，无法进入管理端".to_string());
+                                session.write().error = Some(t!("login_err_not_admin"));
                                 session.write().loading = false;
                                 return;
                             }
@@ -61,19 +61,19 @@ pub fn LoginPage() -> Element {
                             s.plans = plans;
                             s.guests = guests;
                             s.tickets = tickets;
-                            s.notice = Some("已登录管理员账号".to_string());
+                            s.notice = Some(t!("login_success_notice"));
                             s.loading = false;
 
                             navigator().push(Route::OverviewPage {});
                         }
                         Err(e) => {
-                            session.write().error = Some(format!("获取个人信息失败: {e}"));
+                            session.write().error = Some(t!("login_err_prefix_profile", err: e));
                             session.write().loading = false;
                         }
                     }
                 }
                 Err(e) => {
-                    session.write().error = Some(format!("登录失败: {e}"));
+                    session.write().error = Some(t!("login_err_prefix_login", err: e));
                     session.write().loading = false;
                 }
             }
@@ -83,10 +83,10 @@ pub fn LoginPage() -> Element {
     rsx! {
         div { class: "content",
             section { class: "card", style: "max-width: 500px; margin: 50px auto;",
-                h2 { "管理员登录" }
+                h2 { "{t!(\"login_admin_title\")}" }
 
                 div { class: "field",
-                    label { "Admin API Base" }
+                    label { "{t!(\"login_api_base_label\")}" }
                     input {
                         value: "{api_base()}",
                         oninput: move |evt| api_base.set(evt.value()),
@@ -95,7 +95,7 @@ pub fn LoginPage() -> Element {
                 }
 
                 div { class: "field",
-                    label { "Email" }
+                    label { "{t!(\"login_email_label\")}" }
                     input {
                         value: "{email()}",
                         oninput: move |evt| email.set(evt.value()),
@@ -104,7 +104,7 @@ pub fn LoginPage() -> Element {
                 }
 
                 div { class: "field",
-                    label { "Password" }
+                    label { "{t!(\"login_password_label\")}" }
                     input {
                         r#type: "password",
                         value: "{password()}",
@@ -114,11 +114,11 @@ pub fn LoginPage() -> Element {
                 }
 
                 div { class: "actions",
-                    button { class: "btn-primary", onclick: do_login, "登录并验证管理员权限" }
+                    button { class: "btn-primary", onclick: do_login, "{t!(\"login_submit_btn\")}" }
                 }
 
                 if session().loading {
-                    p { class: "status", "处理中..." }
+                    p { class: "status", "{t!(\"processing\")}" }
                 }
 
                 if let Some(message) = &session().notice {
@@ -132,3 +132,4 @@ pub fn LoginPage() -> Element {
         }
     }
 }
+

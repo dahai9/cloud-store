@@ -1,5 +1,6 @@
 use crate::models::AdminSessionState;
 use dioxus::prelude::*;
+use dioxus_i18n::t;
 
 #[component]
 pub fn OverviewPage() -> Element {
@@ -7,9 +8,9 @@ pub fn OverviewPage() -> Element {
 
     rsx! {
         section { class: "hero panel-soft",
-            h2 { "管理面板" }
+            h2 { "{t!(\"overview_title\")}" }
             p {
-                "这里管理节点库存、产品上下架、Guest 配置和工单状态。界面壳子与客户中心保持一致，只是内容和权限不同。"
+                "{t!(\"overview_desc\")}"
             }
             div { class: "chip-row",
                 span { class: "chip", "admin only" }
@@ -20,7 +21,7 @@ pub fn OverviewPage() -> Element {
 
         if let Some(profile) = &session().profile {
             section { class: "card",
-                h2 { "当前管理员" }
+                h2 { "{t!(\"overview_current_admin\")}" }
                 p { class: "status ok",
                     "Email: {profile.email} (ID: {profile.user_id})"
                 }
@@ -36,3 +37,4 @@ pub fn OverviewPage() -> Element {
         }
     }
 }
+

@@ -31,9 +31,9 @@ pub fn DashboardLayout() -> Element {
                 section {
                     class: "card",
                     style: "max-width: 500px; margin: 50px auto; text-align: center;",
-                    h2 { "未登录" }
-                    p { "请先登录管理员账号以访问此页面。" }
-                    Link { to: Route::LoginPage {}, class: "btn-primary", "去登录" }
+                    h2 { "{t!(\"dash_layout_not_logged_in\")}" }
+                    p { "{t!(\"dash_layout_please_login\")}" }
+                    Link { to: Route::LoginPage {}, class: "btn-primary", "{t!(\"dash_layout_go_to_login\")}" }
                 }
             }
         };
@@ -48,7 +48,7 @@ pub fn DashboardLayout() -> Element {
         s.plans.clear();
         s.guests.clear();
         s.tickets.clear();
-        s.notice = Some("已退出管理端会话".to_string());
+        s.notice = Some(t!("dash_layout_logout_notice"));
         navigator().push(Route::LoginPage {});
     };
 
@@ -58,8 +58,8 @@ pub fn DashboardLayout() -> Element {
                 div { class: "logo",
                     div { class: "logo-mark", "A" }
                     div { class: "logo-text",
-                        h1 { "Cloud Store" }
-                        p { "Admin Console" }
+                        h1 { "{t!(\"app_title\")}" }
+                        p { "{t!(\"admin_console\")}" }
                     }
                 }
 
@@ -112,9 +112,9 @@ pub fn DashboardLayout() -> Element {
             main { class: "content",
                 header { class: "topbar",
                     div {
-                        h2 { "Admin Console" }
+                        h2 { "{t!(\"admin_console\")}" }
                         p { class: "status",
-                            "独立管理端与客户端保持同一视觉系统，但权限和端口隔离。"
+                            "{t!(\"dash_layout_admin_desc_p1\")}"
                         }
                     }
 
@@ -122,7 +122,7 @@ pub fn DashboardLayout() -> Element {
                         a {
                             class: "btn-secondary",
                             href: "http://127.0.0.1:8080",
-                            "Store"
+                            "{t!(\"store_btn\")}"
                         }
                         button { class: "btn-secondary", onclick: logout, "{t!(\"nav_logout\")}" }
                     }
@@ -133,3 +133,4 @@ pub fn DashboardLayout() -> Element {
         }
     }
 }
+

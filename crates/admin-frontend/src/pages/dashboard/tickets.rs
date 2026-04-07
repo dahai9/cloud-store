@@ -1,6 +1,7 @@
 use crate::api;
 use crate::models::{AdminSessionState, TicketReplyRequest, TicketStatusUpdateRequest};
 use dioxus::prelude::*;
+use dioxus_i18n::t;
 
 #[component]
 pub fn TicketsPage() -> Element {
@@ -94,7 +95,7 @@ pub fn TicketsPage() -> Element {
                 session.write().loading = true;
                 match api::get_tickets(&api_base, &token).await {
                     Ok(tickets) => session.write().tickets = tickets,
-                    Err(e) => session.write().error = Some(format!("刷新失败: {e}")),
+                    Err(e) => session.write().error = Some(t!("nodes_error_refresh", err: e)),
                 }
                 session.write().loading = false;
             });
@@ -121,7 +122,7 @@ pub fn TicketsPage() -> Element {
                 if let Err(e) =
                     api::update_ticket_status(&api_base, &token, &ticket_id, &status_payload).await
                 {
-                    session.write().error = Some(format!("更新状态失败: {e}"));
+                    session.write().error = Some(t!("nodes_error_update", err: e));
                     session.write().loading = false;
                     return;
                 }
@@ -133,14 +134,14 @@ pub fn TicketsPage() -> Element {
                     if let Err(e) =
                         api::reply_ticket(&api_base, &token, &ticket_id, &reply_payload).await
                     {
-                        session.write().error = Some(format!("回复失败: {e}"));
+                        session.write().error = Some(t!("nodes_error_update", err: e));
                         session.write().loading = false;
                         return;
                     }
                     ticket_reply.set(String::new());
                 }
 
-                session.write().notice = Some("工单状态/回复已提交".to_string());
+                session.write().notice = Some(t!("plans_update_success"));
                 if let Ok(tickets) = api::get_tickets(&api_base, &token).await {
                     session.write().tickets = tickets;
                 }
@@ -164,14 +165,14 @@ pub fn TicketsPage() -> Element {
                 session.write().loading = true;
                 match api::close_ticket(&api_base, &token, &ticket_id).await {
                     Ok(_) => {
-                        session.write().notice = Some("工单已关闭".to_string());
+                        session.write().notice = Some(t!("instances_action_success"));
                         if let Ok(tickets) = api::get_tickets(&api_base, &token).await {
                             session.write().tickets = tickets;
                         }
                         selected_ticket_id.set(String::new());
                     }
                     Err(e) => {
-                        session.write().error = Some(format!("关闭失败: {e}"));
+                        session.write().error = Some(t!("nodes_error_update", err: e));
                     }
                 }
                 session.write().loading = false;
@@ -186,30 +187,30 @@ pub fn TicketsPage() -> Element {
             if let Some(ticket) = selected_ticket {
                 div {
                     div { class: "flex-row-between",
-                        h2 { "工单详情: {ticket.subject}" }
+                        h2 { "{t!(\"tickets_detail_title\")}: {ticket.subject}" }
                         div { class: "flex-row", style: "gap: 10px;",
                             if ticket.status.to_lowercase() != "closed" {
-                                button { class: "btn-secondary", onclick: on_close_ticket, "关闭工单" }
+                                button { class: "btn-secondary", onclick: on_close_ticket, "{t!(\"tickets_close_btn\")}" }
                             }
                             button {
                                 class: "btn-secondary",
                                 onclick: move |_| selected_ticket_id.set(String::new()),
-                                "返回列表"
+                                "{t!(\"back_to_list\")}"
                             }
                         }
                     }
 
                     div { class: "meta-strip", style: "margin-bottom: 20px; padding: 10px; background: #f0f4f8; border-radius: 4px; display: flex; align-items: center;",
                         span { style: "margin-right: 20px;", "ID: {ticket.id}" }
-                        span { style: "margin-right: 20px;", "分类: {ticket.category}" }
-                        span { style: "margin-right: 20px;", "优先级: {ticket.priority}" }
-                        span { style: "margin-right: 20px;", "当前状态: {ticket.status}" }
+                        span { style: "margin-right: 20px;", "{t!(\"tickets_table_category\")}: {ticket.category}" }
+                        span { style: "margin-right: 20px;", "{t!(\"tickets_priority_label\")}: {ticket.priority}" }
+                        span { style: "margin-right: 20px;", "{t!(\"tickets_table_status\")}: {ticket.status}" }
                         span { style: "flex-grow: 1;" }
-                        span { style: "margin-right: 10px;", "用户: {ticket.user_id}" }
+                        span { style: "margin-right: 10px;", "{t!(\"instances_table_user\")}: {ticket.user_id}" }
                         a {
                             class: "btn-secondary btn-sm",
                             href: "/admin/dashboard/guests?search={ticket.user_id}",
-                            "管理用户"
+                            "{t!(\"tickets_manage_user_btn\")}"
                         }
                     }
 
@@ -223,58 +224,58 @@ pub fn TicketsPage() -> Element {
                                     ),
                                     p { style: "margin: 0;", "{msg.message}" }
                                     p { style: "margin: 5px 0 0; font-size: 0.75rem; color: #888;",
-                                        "{msg.created_at} "
-                                        if msg.sender_user_id.as_deref() == Some(ticket.user_id.as_str()) { "(用户)" } else { "(管理员)" }
+                                        if msg.sender_user_id.as_deref() == Some(ticket.user_id.as_str()) { "{t!(\"tickets_msg_user\")}" } else { "{t!(\"tickets_msg_admin\")}" }
                                     }
+
                                 }
                             }
                         }
                     }
 
                     div { class: "admin-controls", style: "padding: 20px; border: 1px solid #eee; border-radius: 8px; background: #fff;",
-                        h3 { "管理操作" }
+                        h3 { "{t!(\"tickets_admin_actions_title\")}" }
                         div { class: "field",
-                            label { "修改状态" }
+                            label { "{t!(\"tickets_update_status_label\")}" }
                             select {
                                 style: "width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px;",
                                 value: "{selected_ticket_status()}",
                                 onchange: move |evt| selected_ticket_status.set(evt.value()),
-                                option { value: "open", "open (打开)" }
-                                option { value: "in_progress", "in_progress (处理中)" }
-                                option { value: "resolved", "resolved (已解决)" }
-                                option { value: "closed", "closed (已关闭)" }
+                                option { value: "open", "open ({t!(\"tickets_status_open\")})" }
+                                option { value: "in_progress", "in_progress ({t!(\"tickets_status_in_progress\")})" }
+                                option { value: "resolved", "resolved ({t!(\"tickets_status_resolved\")})" }
+                                option { value: "closed", "closed ({t!(\"tickets_status_closed\")})" }
                             }
                         }
                         div { class: "field",
-                            label { "回复内容" }
+                            label { "{t!(\"tickets_reply_label\")}" }
                             textarea {
                                 style: "width: 100%; min-height: 100px; padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px;",
                                 value: "{ticket_reply()}",
                                 oninput: move |evt| ticket_reply.set(evt.value()),
-                                placeholder: "输入回复内容..."
+                                placeholder: "{t!(\"tickets_reply_placeholder\")}"
                             }
                         }
-                        button { class: "btn-primary", onclick: update_ticket, "提交修改与回复" }
+                        button { class: "btn-primary", onclick: update_ticket, "{t!(\"submit\")}" }
                     }
                 }
             } else {
                 div {
                     div { class: "flex-row-between",
-                        h2 { "工单管理" }
-                        button { class: "btn-secondary", onclick: refresh_tickets, "刷新工单" }
+                        h2 { "{t!(\"tickets_title\")}" }
+                        button { class: "btn-secondary", onclick: refresh_tickets, "{t!(\"refresh\")}" }
                     }
 
                     if session().tickets.is_empty() {
-                        p { class: "status", "暂无工单数据。" }
+                        p { class: "status", "{t!(\"tickets_no_data\")}" }
                     } else {
                         table { style: "width: 100%; border-collapse: collapse; margin-top: 20px;",
                             thead {
                                 tr {
-                                    th { style: "text-align: left; padding: 12px; border-bottom: 2px solid #eee;", "ID" }
-                                    th { style: "text-align: left; padding: 12px; border-bottom: 2px solid #eee;", "主题" }
-                                    th { style: "text-align: left; padding: 12px; border-bottom: 2px solid #eee;", "分类" }
-                                    th { style: "text-align: left; padding: 12px; border-bottom: 2px solid #eee;", "状态" }
-                                    th { style: "text-align: left; padding: 12px; border-bottom: 2px solid #eee;", "操作" }
+                                    th { style: "text-align: left; padding: 12px; border-bottom: 2px solid #eee;", "{t!(\"tickets_table_id\")}" }
+                                    th { style: "text-align: left; padding: 12px; border-bottom: 2px solid #eee;", "{t!(\"tickets_table_subject\")}" }
+                                    th { style: "text-align: left; padding: 12px; border-bottom: 2px solid #eee;", "{t!(\"tickets_table_category\")}" }
+                                    th { style: "text-align: left; padding: 12px; border-bottom: 2px solid #eee;", "{t!(\"tickets_table_status\")}" }
+                                    th { style: "text-align: left; padding: 12px; border-bottom: 2px solid #eee;", "{t!(\"actions_label\")}" }
                                 }
                             }
                             tbody {
@@ -299,7 +300,7 @@ pub fn TicketsPage() -> Element {
                                                         selected_ticket_status.set(t.status.clone());
                                                     }
                                                 },
-                                                "查看详情"
+                                                "{t!(\"tickets_view_detail_btn\")}"
                                             }
                                         }
                                     }
@@ -312,3 +313,4 @@ pub fn TicketsPage() -> Element {
         }
     }
 }
+

@@ -1,6 +1,7 @@
 use crate::api;
 use crate::models::AdminSessionState;
 use dioxus::prelude::*;
+use dioxus_i18n::t;
 
 #[component]
 pub fn InstancesPage() -> Element {
@@ -16,10 +17,10 @@ pub fn InstancesPage() -> Element {
                 Ok(instances) => {
                     let mut s = session.write();
                     s.instances = instances;
-                    s.notice = Some("实例列表已刷新".to_string());
+                    s.notice = Some(t!("nodes_refresh_success"));
                 }
                 Err(e) => {
-                    session.write().error = Some(format!("刷新失败: {e}"));
+                    session.write().error = Some(t!("nodes_error_refresh", err: e));
                 }
             }
             session.write().loading = false;
@@ -28,41 +29,41 @@ pub fn InstancesPage() -> Element {
 
     rsx! {
         section { class: "card", id: "instances",
-            h2 { "全平台实例概览" }
+            h2 { "{t!(\"instances_title\")}" }
             div { class: "actions",
                 button {
                     class: "btn-primary",
                     onclick: move |_| {
-                        session.write().notice = Some("手动添加实例功能已在 API 层面实现，请使用 API 工具或完善 UI 呼叫 /api/admin/instances".to_string());
+                        session.write().notice = Some("API call to /api/admin/instances is available for manual creation but UI form is pending.".to_string());
                     },
-                    "添加实例"
+                    "{t!(\"nodes_add_btn\")}"
                 }
                 button {
                     class: "btn-secondary",
                     onclick: refresh_instances,
-                    "刷新列表"
+                    "{t!(\"refresh\")}"
                 }
             }
 
             if session().loading {
-                p { class: "status", "刷新中..." }
+                p { class: "status", "{t!(\"loading\")}" }
             }
 
             if session().instances.is_empty() {
-                p { class: "status", "暂无实例数据。" }
+                p { class: "status", "{t!(\"instances_no_data\")}" }
             } else {
                 div { class: "table-container",
                     table { class: "admin-table",
                         thead {
                             tr {
-                                th { "ID" }
-                                th { "用户" }
-                                th { "节点" }
-                                th { "套餐" }
-                                th { "状态" }
-                                th { "镜像" }
-                                th { "创建时间" }
-                                th { "操作" }
+                                th { "{t!(\"instances_table_id\")}" }
+                                th { "{t!(\"instances_table_user\")}" }
+                                th { "{t!(\"instances_table_node\")}" }
+                                th { "{t!(\"instances_table_plan\")}" }
+                                th { "{t!(\"instances_table_status\")}" }
+                                th { "{t!(\"instances_table_image\")}" }
+                                th { "{t!(\"instances_table_created\")}" }
+                                th { "{t!(\"actions_label\")}" }
                             }
                         }
                         tbody {
@@ -97,7 +98,7 @@ pub fn InstancesPage() -> Element {
                                                         session.write().loading = true;
                                                         match api::delete_instance(&api_base, &token, &id, &payload).await {
                                                             Ok(_) => {
-                                                                session.write().notice = Some("实例已删除".to_string());
+                                                                session.write().notice = Some(t!("instances_action_success"));
                                                                 if let Ok(instances) = api::get_instances(&api_base, &token).await {
                                                                     session.write().instances = instances;
                                                                 }
@@ -108,7 +109,7 @@ pub fn InstancesPage() -> Element {
                                                     });
                                                 }
                                             },
-                                            "删除"
+                                            "{t!(\"delete\")}"
                                         }
                                     }
                                 }
@@ -120,3 +121,4 @@ pub fn InstancesPage() -> Element {
         }
     }
 }
+

@@ -3,6 +3,7 @@ use crate::models::{
     AdminPlanCreateRequest, AdminPlanItem, AdminPlanUpdateRequest, AdminSessionState,
 };
 use dioxus::prelude::*;
+use dioxus_i18n::t;
 
 #[component]
 pub fn PlansPage() -> Element {
@@ -30,8 +31,12 @@ pub fn PlansPage() -> Element {
         spawn(async move {
             session.write().loading = true;
             match api::get_plans(&api_base, &token).await {
-                Ok(plans) => session.write().plans = plans,
-                Err(e) => session.write().error = Some(format!("刷新失败: {e}")),
+                Ok(plans) => {
+                    let mut s = session.write();
+                    s.plans = plans;
+                    s.notice = Some(t!("plans_refresh_success"));
+                }
+                Err(e) => session.write().error = Some(t!("nodes_error_refresh", err: e)),
             }
             session.write().loading = false;
         });
@@ -101,6 +106,7 @@ pub fn PlansPage() -> Element {
             match max_inv_str.trim().parse::<i64>() {
                 Ok(v) => Some(v),
                 Err(_) => {
+                    // Use a generic numeric error or hardcode if not common
                     session.write().error = Some("库存上限必须是数字".to_string());
                     return;
                 }
@@ -128,14 +134,14 @@ pub fn PlansPage() -> Element {
                 };
                 match api::create_plan(&api_base, &token, &payload).await {
                     Ok(_) => {
-                        session.write().notice = Some("Plan 创建成功".to_string());
+                        session.write().notice = Some(t!("plans_add_success"));
                         is_creating.set(false);
                         match api::get_plans(&api_base, &token).await {
                             Ok(plans) => session.write().plans = plans,
-                            Err(e) => session.write().error = Some(format!("刷新列表失败: {e}")),
+                            Err(e) => session.write().error = Some(t!("nodes_error_refresh", err: e)),
                         }
                     }
-                    Err(e) => session.write().error = Some(format!("创建失败: {e}")),
+                    Err(e) => session.write().error = Some(t!("nodes_error_add", err: e)),
                 }
             } else if editing {
                 let payload = AdminPlanUpdateRequest {
@@ -153,14 +159,14 @@ pub fn PlansPage() -> Element {
                 };
                 match api::update_plan(&api_base, &token, &pid, &payload).await {
                     Ok(_) => {
-                        session.write().notice = Some("Plan 更新成功".to_string());
+                        session.write().notice = Some(t!("plans_update_success"));
                         is_editing.set(false);
                         match api::get_plans(&api_base, &token).await {
                             Ok(plans) => session.write().plans = plans,
-                            Err(e) => session.write().error = Some(format!("刷新列表失败: {e}")),
+                            Err(e) => session.write().error = Some(t!("nodes_error_refresh", err: e)),
                         }
                     }
-                    Err(e) => session.write().error = Some(format!("更新失败: {e}")),
+                    Err(e) => session.write().error = Some(t!("nodes_error_update", err: e)),
                 }
             }
 
@@ -188,13 +194,13 @@ pub fn PlansPage() -> Element {
             };
             match api::update_plan(&api_base, &token, &plan_id, &payload).await {
                 Ok(_) => {
-                    session.write().notice = Some("Plan 上下架更新成功".to_string());
+                    session.write().notice = Some(t!("plans_update_success"));
                     match api::get_plans(&api_base, &token).await {
                         Ok(plans) => session.write().plans = plans,
-                        Err(e) => session.write().error = Some(format!("刷新列表失败: {e}")),
+                        Err(e) => session.write().error = Some(t!("nodes_error_refresh", err: e)),
                     }
                 }
-                Err(e) => session.write().error = Some(format!("更新失败: {e}")),
+                Err(e) => session.write().error = Some(t!("nodes_error_update", err: e)),
             }
             session.write().loading = false;
         });
@@ -202,11 +208,11 @@ pub fn PlansPage() -> Element {
 
     rsx! {
         section { class: "card", id: "plans",
-            h2 { "产品上架/库存" }
+            h2 { "{t!(\"plans_title\")}" }
             div { class: "actions",
-                button { class: "btn-secondary", onclick: refresh_plans, "刷新 Plan" }
+                button { class: "btn-secondary", onclick: refresh_plans, "{t!(\"refresh\")}" }
                 if !is_creating() && !is_editing() {
-                    button { class: "btn-primary", onclick: start_create, "新增 Plan" }
+                    button { class: "btn-primary", onclick: start_create, "{t!(\"plans_add_btn\")}" }
                 }
             }
 
@@ -214,35 +220,35 @@ pub fn PlansPage() -> Element {
                 div { class: "form",
                     h3 {
                         if is_creating() {
-                            "新增 Plan"
+                            "{t!(\"plans_add_modal_title\")}"
                         } else {
-                            "编辑 Plan"
+                            {t!("plans_edit_modal_title", name: form_name())}
                         }
                     }
 
                     div { class: "field",
-                        label { "Code (标识)" }
+                        label { "{t!(\"plans_form_id\")}" }
                         input {
                             value: "{form_code()}",
                             oninput: move |evt| form_code.set(evt.value()),
                         }
                     }
                     div { class: "field",
-                        label { "Name (名称)" }
+                        label { "{t!(\"plans_form_name\")}" }
                         input {
                             value: "{form_name()}",
                             oninput: move |evt| form_name.set(evt.value()),
                         }
                     }
                     div { class: "field",
-                        label { "Price (金额 /月)" }
+                        label { "{t!(\"plans_form_price\")}" }
                         input {
                             value: "{form_monthly_price()}",
                             oninput: move |evt| form_monthly_price.set(evt.value()),
                         }
                     }
                     div { class: "field",
-                        label { "CPU Cores (核心数)" }
+                        label { "{t!(\"plans_form_cpu\")}" }
                         input {
                             r#type: "number",
                             min: "1",
@@ -256,7 +262,7 @@ pub fn PlansPage() -> Element {
                         }
                     }
                     div { class: "field",
-                        label { "CPU Allowance (%)" }
+                        label { "{t!(\"plans_form_cpu_allowance\")}" }
                         input {
                             r#type: "number",
                             min: "1",
@@ -270,7 +276,7 @@ pub fn PlansPage() -> Element {
                         }
                     }
                     div { class: "field",
-                        label { "Memory (内存 MB)" }
+                        label { "{t!(\"plans_form_ram\")}" }
                         input {
                             r#type: "number",
                             value: "{form_memory_mb()}",
@@ -282,7 +288,7 @@ pub fn PlansPage() -> Element {
                         }
                     }
                     div { class: "field",
-                        label { "Storage (硬盘 GB)" }
+                        label { "{t!(\"plans_form_storage\")}" }
                         input {
                             r#type: "number",
                             value: "{form_storage_gb()}",
@@ -294,7 +300,7 @@ pub fn PlansPage() -> Element {
                         }
                     }
                     div { class: "field",
-                        label { "Bandwidth (带宽 Mbps)" }
+                        label { "{t!(\"plans_form_bw\")}" }
                         input {
                             r#type: "number",
                             value: "{form_bandwidth_mbps()}",
@@ -306,7 +312,7 @@ pub fn PlansPage() -> Element {
                         }
                     }
                     div { class: "field",
-                        label { "Traffic (流量 GB，-1 表示无限流量)" }
+                        label { "{t!(\"plans_form_traffic\")}" }
                         input {
                             r#type: "number",
                             min: "-1",
@@ -320,7 +326,7 @@ pub fn PlansPage() -> Element {
                     }
                     if is_editing() {
                         div { class: "field",
-                            label { "Max Inventory（留空表示不限）" }
+                            label { "{t!(\"plans_form_max_inv_hint\")}" }
                             input {
                                 value: "{form_max_inventory()}",
                                 oninput: move |evt| form_max_inventory.set(evt.value()),
@@ -333,22 +339,22 @@ pub fn PlansPage() -> Element {
                                     checked: form_active(),
                                     onchange: move |evt| form_active.set(evt.value().parse().unwrap_or(false)),
                                 }
-                                " 上架 (Active)"
+                                " {t!(\"plans_form_active\")}"
                             }
                         }
                     }
 
                     div { class: "actions",
-                        button { class: "btn-primary", onclick: save_plan, "保存" }
-                        button { class: "btn-secondary", onclick: cancel_edit, "取消" }
+                        button { class: "btn-primary", onclick: save_plan, "{t!(\"save\")}" }
+                        button { class: "btn-secondary", onclick: cancel_edit, "{t!(\"cancel\")}" }
                     }
                 }
             } else {
                 if session().loading {
-                    p { class: "status", "处理中..." }
+                    p { class: "status", "{t!(\"processing\")}" }
                 }
                 if session().plans.is_empty() {
-                    p { class: "status", "暂无 Plan 数据。" }
+                    p { class: "status", "{t!(\"plans_no_data\")}" }
                 } else {
                     ul { class: "list",
                         for plan in session().plans.clone() {
@@ -357,11 +363,21 @@ pub fn PlansPage() -> Element {
                                 span { class: "meta", "Plan ID: {plan.id}" }
                                 span { class: "meta", "Price: ${plan.monthly_price}/mo" }
                                 span { class: "meta",
-                                    "{plan.cpu_cores}C / {plan.cpu_allowance_pct}% CPU / {plan.memory_mb}MB / {plan.storage_gb}GB / {plan.bandwidth_mbps}Mbps / {format_traffic_gb(plan.traffic_gb)}"
+                                    "{plan.cpu_cores}C / {plan.cpu_allowance_pct}% CPU / {plan.memory_mb}MB / {plan.storage_gb}GB / {plan.bandwidth_mbps}Mbps / "
+                                    if plan.traffic_gb == -1 {
+                                        "{t!(\"plans_unlimited_traffic\")}"
+                                    } else {
+                                        {t!("plans_traffic_value", value: plan.traffic_gb)}
+                                    }
                                 }
                                 span { class: "meta", "Active: {plan.active}" }
                                 span { class: "meta",
-                                    "Sold/Max: {plan.sold_inventory}/{plan.max_inventory.unwrap_or(-1)} (-1 表示不限)"
+                                    "{t!(\"plans_sold_max_label\")}: {plan.sold_inventory} / "
+                                    if let Some(max) = plan.max_inventory {
+                                        "{max}"
+                                    } else {
+                                        "{t!(\"plans_unlimited\")}"
+                                    }
                                 }
                                 div { class: "actions",
                                     button {
@@ -372,10 +388,11 @@ pub fn PlansPage() -> Element {
                                             move |_| toggle_active(pid.clone(), next)
                                         },
                                         if plan.active {
-                                            "下架"
+                                            "{t!(\"delete\")}" // Usually "下架" in CN
                                         } else {
-                                            "上架"
+                                            "{t!(\"submit\")}" // Usually "上架" in CN
                                         }
+
                                     }
                                     button {
                                         class: "btn-secondary",
@@ -383,7 +400,7 @@ pub fn PlansPage() -> Element {
                                             let p = plan.clone();
                                             move |_| start_edit(p.clone())
                                         },
-                                        "编辑"
+                                        "{t!(\"edit\")}"
                                     }
                                 }
                             }
@@ -395,10 +412,4 @@ pub fn PlansPage() -> Element {
     }
 }
 
-fn format_traffic_gb(traffic_gb: i64) -> String {
-    if traffic_gb == -1 {
-        "无限流量".to_string()
-    } else {
-        format!("{traffic_gb}GB 流量")
-    }
-}
+

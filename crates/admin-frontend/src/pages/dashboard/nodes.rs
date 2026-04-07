@@ -1,6 +1,7 @@
 use crate::api;
 use crate::models::{AdminSessionState, NodeCreateRequest, NodeItem, NodeUpdateRequest};
 use dioxus::prelude::*;
+use dioxus_i18n::t;
 
 #[component]
 pub fn NodesPage() -> Element {
@@ -26,10 +27,10 @@ pub fn NodesPage() -> Element {
                 Ok(nodes) => {
                     let mut s = session.write();
                     s.nodes = nodes;
-                    s.notice = Some("节点列表已刷新".to_string());
+                    s.notice = Some(t!("nodes_refresh_success"));
                 }
                 Err(e) => {
-                    session.write().error = Some(format!("刷新失败: {e}"));
+                    session.write().error = Some(t!("nodes_error_refresh", err: e));
                 }
             }
             session.write().loading = false;
@@ -70,14 +71,14 @@ pub fn NodesPage() -> Element {
             match api::create_node(&api_base, &token, &req).await {
                 Ok(_) => {
                     show_add_form.set(false);
-                    session.write().notice = Some("节点添加成功".to_string());
+                    session.write().notice = Some(t!("nodes_add_success"));
                     // Refresh list
                     if let Ok(nodes) = api::get_nodes(&api_base, &token).await {
                         session.write().nodes = nodes;
                     }
                 }
                 Err(e) => {
-                    session.write().error = Some(format!("添加失败: {e}"));
+                    session.write().error = Some(t!("nodes_error_add", err: e));
                 }
             }
             session.write().loading = false;
@@ -122,14 +123,14 @@ pub fn NodesPage() -> Element {
             match api::update_node(&api_base, &token, &node_id, &req).await {
                 Ok(_) => {
                     editing_node.set(None);
-                    session.write().notice = Some("节点更新成功".to_string());
+                    session.write().notice = Some(t!("nodes_update_success"));
                     // Refresh list
                     if let Ok(nodes) = api::get_nodes(&api_base, &token).await {
                         session.write().nodes = nodes;
                     }
                 }
                 Err(e) => {
-                    session.write().error = Some(format!("更新失败: {e}"));
+                    session.write().error = Some(t!("nodes_error_update", err: e));
                 }
             }
             session.write().loading = false;
@@ -138,9 +139,9 @@ pub fn NodesPage() -> Element {
 
     rsx! {
         section { class: "card", id: "nodes",
-            h2 { "节点管理" }
+            h2 { "{t!(\"nodes_title\")}" }
             div { class: "actions",
-                button { class: "btn-secondary", onclick: refresh_nodes, "刷新列表" }
+                button { class: "btn-secondary", onclick: refresh_nodes, "{t!(\"refresh\")}" }
                 button {
                     class: "btn-primary",
                     onclick: move |_| {
@@ -154,17 +155,17 @@ pub fn NodesPage() -> Element {
                         endpoint.set(String::new());
                         api_token.set(String::new());
                     },
-                    "添加节点"
+                    "{t!(\"nodes_add_btn\")}"
                 }
             }
 
             if show_add_form() {
                 div { class: "modal-overlay",
                     div { class: "modal-content",
-                        h3 { "添加新节点" }
+                        h3 { "{t!(\"nodes_add_modal_title\")}" }
                         div {
                             div { class: "form-group",
-                                label { "节点名称" }
+                                label { "{t!(\"nodes_form_name\")}" }
                                 input {
                                     value: "{name}",
                                     oninput: move |evt| name.set(evt.value()),
@@ -173,7 +174,7 @@ pub fn NodesPage() -> Element {
                                 }
                             }
                             div { class: "form-group",
-                                label { "地区" }
+                                label { "{t!(\"nodes_form_region\")}" }
                                 input {
                                     value: "{region}",
                                     oninput: move |evt| region.set(evt.value()),
@@ -182,7 +183,7 @@ pub fn NodesPage() -> Element {
                                 }
                             }
                             div { class: "form-group",
-                                label { "CPU 核心" }
+                                label { "{t!(\"nodes_form_cpu\")}" }
                                 input {
                                     value: "{cpu}",
                                     oninput: move |evt| cpu.set(evt.value()),
@@ -191,7 +192,7 @@ pub fn NodesPage() -> Element {
                                 }
                             }
                             div { class: "form-group",
-                                label { "内存 (MB)" }
+                                label { "{t!(\"nodes_form_ram\")}" }
                                 input {
                                     value: "{ram}",
                                     oninput: move |evt| ram.set(evt.value()),
@@ -200,7 +201,7 @@ pub fn NodesPage() -> Element {
                                 }
                             }
                             div { class: "form-group",
-                                label { "存储 (GB)" }
+                                label { "{t!(\"nodes_form_storage\")}" }
                                 input {
                                     value: "{storage}",
                                     oninput: move |evt| storage.set(evt.value()),
@@ -209,7 +210,7 @@ pub fn NodesPage() -> Element {
                                 }
                             }
                             div { class: "form-group",
-                                label { "API 端点 (可选)" }
+                                label { "{t!(\"nodes_form_api_endpoint\")}" }
                                 input {
                                     value: "{endpoint}",
                                     oninput: move |evt| endpoint.set(evt.value()),
@@ -217,24 +218,24 @@ pub fn NodesPage() -> Element {
                                 }
                             }
                             div { class: "form-group",
-                                label { "Incus 信任令牌 (可选)" }
+                                label { "{t!(\"nodes_form_incus_token\")}" }
                                 input {
                                     value: "{api_token}",
                                     oninput: move |evt| api_token.set(evt.value()),
-                                    placeholder: "token from `incus config trust add <client-name>`",
+                                    placeholder: "{t!(\"nodes_incus_token_placeholder\")}",
                                 }
                             }
                             div { class: "modal-actions",
                                 button {
                                     class: "btn-primary",
                                     onclick: on_submit_add,
-                                    "提交"
+                                    "{t!(\"submit\")}"
                                 }
                                 button {
                                     r#type: "button",
                                     class: "btn-secondary",
                                     onclick: move |_| show_add_form.set(false),
-                                    "取消"
+                                    "{t!(\"cancel\")}"
                                 }
                             }
                         }
@@ -245,10 +246,10 @@ pub fn NodesPage() -> Element {
             if let Some(node) = editing_node() {
                 div { class: "modal-overlay",
                     div { class: "modal-content",
-                        h3 { "编辑节点: {node.name}" }
+                        h3 { {t!("nodes_edit_modal_title", name: node.name.clone())} }
                         div {
                             div { class: "form-group",
-                                label { "节点名称" }
+                                label { "{t!(\"nodes_form_name\")}" }
                                 input {
                                     value: "{name}",
                                     oninput: move |evt| name.set(evt.value()),
@@ -256,7 +257,7 @@ pub fn NodesPage() -> Element {
                                 }
                             }
                             div { class: "form-group",
-                                label { "地区" }
+                                label { "{t!(\"nodes_form_region\")}" }
                                 input {
                                     value: "{region}",
                                     oninput: move |evt| region.set(evt.value()),
@@ -264,7 +265,7 @@ pub fn NodesPage() -> Element {
                                 }
                             }
                             div { class: "form-group",
-                                label { "CPU 核心" }
+                                label { "{t!(\"nodes_form_cpu\")}" }
                                 input {
                                     value: "{cpu}",
                                     oninput: move |evt| cpu.set(evt.value()),
@@ -273,7 +274,7 @@ pub fn NodesPage() -> Element {
                                 }
                             }
                             div { class: "form-group",
-                                label { "内存 (MB)" }
+                                label { "{t!(\"nodes_form_ram\")}" }
                                 input {
                                     value: "{ram}",
                                     oninput: move |evt| ram.set(evt.value()),
@@ -282,7 +283,7 @@ pub fn NodesPage() -> Element {
                                 }
                             }
                             div { class: "form-group",
-                                label { "存储 (GB)" }
+                                label { "{t!(\"nodes_form_storage\")}" }
                                 input {
                                     value: "{storage}",
                                     oninput: move |evt| storage.set(evt.value()),
@@ -291,14 +292,14 @@ pub fn NodesPage() -> Element {
                                 }
                             }
                             div { class: "form-group",
-                                label { "API 端点" }
+                                label { "{t!(\"nodes_form_api_endpoint_edit\")}" }
                                 input {
                                     value: "{endpoint}",
                                     oninput: move |evt| endpoint.set(evt.value()),
                                 }
                             }
                             div { class: "form-group",
-                                label { "API 令牌" }
+                                label { "{t!(\"nodes_form_incus_token_edit\")}" }
                                 input {
                                     value: "{api_token}",
                                     oninput: move |evt| api_token.set(evt.value()),
@@ -308,13 +309,13 @@ pub fn NodesPage() -> Element {
                                 button {
                                     class: "btn-primary",
                                     onclick: on_submit_edit,
-                                    "保存"
+                                    "{t!(\"save\")}"
                                 }
                                 button {
                                     r#type: "button",
                                     class: "btn-secondary",
                                     onclick: move |_| editing_node.set(None),
-                                    "取消"
+                                    "{t!(\"cancel\")}"
                                 }
                             }
                         }
@@ -323,11 +324,11 @@ pub fn NodesPage() -> Element {
             }
 
             if session().loading {
-                p { class: "status", "加载中..." }
+                p { class: "status", "{t!(\"loading\")}" }
             }
 
             if session().nodes.is_empty() {
-                p { class: "status", "暂无节点数据。" }
+                p { class: "status", "{t!(\"nodes_no_data\")}" }
             } else {
                 ul { class: "list",
                     for node in session().nodes.clone() {
@@ -352,7 +353,7 @@ pub fn NodesPage() -> Element {
                                             show_add_form.set(false);
                                         }
                                     },
-                                    "编辑"
+                                    "{t!(\"edit\")}"
                                 }
                             }
                             span { class: "meta", "ID: {node.id} | Region: {node.region}" }
@@ -389,3 +390,4 @@ pub fn NodesPage() -> Element {
         }
     }
 }
+

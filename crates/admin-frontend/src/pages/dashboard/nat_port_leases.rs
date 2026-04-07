@@ -1,6 +1,7 @@
 use crate::api;
 use crate::models::{AdminSessionState, NatPortLeaseCreateRequest};
 use dioxus::prelude::*;
+use dioxus_i18n::t;
 
 #[component]
 pub fn NatPortLeasesPage() -> Element {
@@ -21,10 +22,10 @@ pub fn NatPortLeasesPage() -> Element {
             match api::get_nodes(&api_base, &token).await {
                 Ok(nodes) => {
                     session.write().nodes = nodes;
-                    session.write().notice = Some("节点列表已刷新".to_string());
+                    session.write().notice = Some(t!("nodes_refresh_success"));
                 }
                 Err(e) => {
-                    session.write().error = Some(format!("刷新节点失败: {e}"));
+                    session.write().error = Some(t!("nodes_error_refresh", err: e));
                 }
             }
             session.write().loading = false;
@@ -40,10 +41,10 @@ pub fn NatPortLeasesPage() -> Element {
             match api::get_nat_port_leases(&api_base, &token).await {
                 Ok(leases) => {
                     session.write().nat_port_leases = leases;
-                    session.write().notice = Some("NAT 端口租约已刷新".to_string());
+                    session.write().notice = Some(t!("nat_leases_refresh_success"));
                 }
                 Err(e) => {
-                    session.write().error = Some(format!("刷新租约失败: {e}"));
+                    session.write().error = Some(t!("nodes_error_refresh", err: e));
                 }
             }
             session.write().loading = false;
@@ -74,7 +75,7 @@ pub fn NatPortLeasesPage() -> Element {
         let end_port_val = end_port().trim().parse::<i64>().unwrap_or(0);
 
         if node_id.trim().is_empty() {
-            session.write().error = Some("请先选择节点".to_string());
+            session.write().error = Some(t!("nat_leases_form_node")); // Re-using as label/warning
             return;
         }
 
@@ -90,13 +91,13 @@ pub fn NatPortLeasesPage() -> Element {
             match api::create_nat_port_lease(&api_base, &token, &payload).await {
                 Ok(_) => {
                     show_create_form.set(false);
-                    session.write().notice = Some("NAT 端口租约创建成功".to_string());
+                    session.write().notice = Some(t!("nat_leases_generate_success"));
                     if let Ok(leases) = api::get_nat_port_leases(&api_base, &token).await {
                         session.write().nat_port_leases = leases;
                     }
                 }
                 Err(e) => {
-                    session.write().error = Some(format!("创建失败: {e}"));
+                    session.write().error = Some(t!("nodes_error_add", err: e));
                 }
             }
             session.write().loading = false;
@@ -111,13 +112,13 @@ pub fn NatPortLeasesPage() -> Element {
             session.write().loading = true;
             match api::delete_nat_port_lease(&api_base, &token, &lease_id).await {
                 Ok(_) => {
-                    session.write().notice = Some("NAT 端口租约已删除".to_string());
+                    session.write().notice = Some(t!("instances_action_success"));
                     if let Ok(leases) = api::get_nat_port_leases(&api_base, &token).await {
                         session.write().nat_port_leases = leases;
                     }
                 }
                 Err(e) => {
-                    session.write().error = Some(format!("删除失败: {e}"));
+                    session.write().error = Some(t!("nodes_error_update", err: e));
                 }
             }
             session.write().loading = false;
@@ -126,47 +127,47 @@ pub fn NatPortLeasesPage() -> Element {
 
     rsx! {
         section { class: "card", id: "nat-port-leases",
-            h2 { "NAT 端口租约" }
+            h2 { "{t!(\"nat_leases_title\")}" }
             p { class: "status",
-                "这里管理 worker 用来给实例分配的端口段。每条租约对应一个节点上的一段公网端口范围。"
+                "{t!(\"nat_leases_node_desc\")}"
             }
 
             div { class: "actions",
-                button { class: "btn-secondary", onclick: refresh_nodes, "刷新节点" }
-                button { class: "btn-secondary", onclick: refresh_leases, "刷新租约" }
+                button { class: "btn-secondary", onclick: refresh_nodes, "{t!(\"nav_nodes\")}" }
+                button { class: "btn-secondary", onclick: refresh_leases, "{t!(\"refresh\")}" }
                 button {
                     class: "btn-primary",
                     onclick: open_create_form,
                     disabled: session().nodes.is_empty(),
-                    "创建租约"
+                    "{t!(\"nat_leases_add_btn\")}"
                 }
             }
 
             if session().nodes.is_empty() {
                 p { class: "status",
-                    "当前还没有可选节点，请先到 Nodes 页面添加节点。"
+                    "{t!(\"nat_leases_no_nodes_warning\")}"
                 }
             }
 
             if show_create_form() {
                 div { class: "modal-overlay",
                     div { class: "modal-content",
-                        h3 { "创建 NAT 端口租约" }
+                        h3 { "{t!(\"nat_leases_title\")}" }
                         div {
                             div { class: "form-group",
-                                label { "节点" }
+                                label { "{t!(\"nat_leases_form_node\")}" }
                                 select {
                                     value: "{selected_node_id()}",
                                     oninput: move |evt| selected_node_id.set(evt.value()),
                                     disabled: session().nodes.is_empty(),
-                                    option { value: "", "请选择节点" }
+                                    option { value: "", "{t!(\"nat_leases_form_node\")}" }
                                     for node in session().nodes.clone() {
                                         option { value: "{node.id}", "{node.name} ({node.region})" }
                                     }
                                 }
                             }
                             div { class: "form-group",
-                                label { "公网 IP" }
+                                label { "{t!(\"nat_leases_form_public_ip\")}" }
                                 input {
                                     value: "{public_ip}",
                                     oninput: move |evt| public_ip.set(evt.value()),
@@ -174,7 +175,7 @@ pub fn NatPortLeasesPage() -> Element {
                                 }
                             }
                             div { class: "form-group",
-                                label { "起始端口" }
+                                label { "{t!(\"nat_leases_form_start_port\")}" }
                                 input {
                                     r#type: "number",
                                     value: "{start_port}",
@@ -183,7 +184,7 @@ pub fn NatPortLeasesPage() -> Element {
                                 }
                             }
                             div { class: "form-group",
-                                label { "结束端口" }
+                                label { "{t!(\"nat_leases_form_end_port\")}" }
                                 input {
                                     r#type: "number",
                                     value: "{end_port}",
@@ -192,12 +193,12 @@ pub fn NatPortLeasesPage() -> Element {
                                 }
                             }
                             div { class: "modal-actions",
-                                button { class: "btn-primary", onclick: save_lease, "提交" }
+                                button { class: "btn-primary", onclick: save_lease, "{t!(\"submit\")}" }
                                 button {
                                     r#type: "button",
                                     class: "btn-secondary",
                                     onclick: move |_| show_create_form.set(false),
-                                    "取消"
+                                    "{t!(\"cancel\")}"
                                 }
                             }
                         }
@@ -206,11 +207,11 @@ pub fn NatPortLeasesPage() -> Element {
             }
 
             if session().loading {
-                p { class: "status", "处理中..." }
+                p { class: "status", "{t!(\"processing\")}" }
             }
 
             if session().nat_port_leases.is_empty() {
-                p { class: "status", "暂无 NAT 端口租约数据。" }
+                p { class: "status", "{t!(\"nat_leases_no_data\")}" }
             } else {
                 ul { class: "list",
                     for lease in session().nat_port_leases.clone() {
@@ -219,10 +220,11 @@ pub fn NatPortLeasesPage() -> Element {
                                 strong { "{lease.node_name}" }
                                 span { class: "meta",
                                     if lease.reserved {
-                                        "已占用"
+                                        "{t!(\"nat_leases_status_occupied\")}"
                                     } else {
-                                        "可用"
+                                        "{t!(\"nat_leases_status_available\")}"
                                     }
+
                                 }
                             }
                             span { class: "meta",
@@ -243,11 +245,12 @@ pub fn NatPortLeasesPage() -> Element {
                                             let lease_id = lease.id.clone();
                                             move |_| delete_lease(lease_id.clone())
                                         },
-                                        "删除"
+                                        "{t!(\"delete\")}"
                                     }
                                 } else {
-                                    span { class: "meta", "已被 worker 占用，不能删除" }
+                                    span { class: "meta", "{t!(\"nat_leases_occupied_warning\")}" }
                                 }
+
                             }
                         }
                     }
@@ -256,3 +259,4 @@ pub fn NatPortLeasesPage() -> Element {
         }
     }
 }
+
