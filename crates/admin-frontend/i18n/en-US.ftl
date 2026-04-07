@@ -118,6 +118,7 @@ nat_leases_form_public_ip = Public IP (NAT)
 nat_leases_form_start_port = Start Port
 nat_leases_form_end_port = End Port
 nat_leases_generate_success = Port leases generated successfully.
+nat_leases_refresh_success = NAT port leases refreshed.
 nat_leases_table_ip = Public IP
 nat_leases_table_port = Port
 nat_leases_table_target = Target (Instance:Port)

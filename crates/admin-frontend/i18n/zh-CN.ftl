@@ -118,6 +118,7 @@ nat_leases_form_public_ip = 公共 IP (NAT)
 nat_leases_form_start_port = 起始端口
 nat_leases_form_end_port = 结束端口
 nat_leases_generate_success = 端口池生成成功
+nat_leases_refresh_success = NAT 端口池列表已刷新
 nat_leases_table_ip = 公共 IP
 nat_leases_table_port = 端口
 nat_leases_table_target = 目标 (实例:端口)
