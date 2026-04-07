@@ -127,7 +127,7 @@ pub fn LoginPage(source: Option<String>, plan: Option<String>) -> Element {
                 }
                 div { class: "flex-row", style: "gap: 10px;",
                     button {
-                        class: "btn-secondary btn-sm",
+                        class: "btn-secondary",
                         onclick: move |_| {
                             use unic_langid::langid;
                             let mut i18n = dioxus_i18n::prelude::i18n();

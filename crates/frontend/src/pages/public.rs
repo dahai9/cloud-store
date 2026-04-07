@@ -3,7 +3,7 @@ use crate::api;
 use crate::models::{Route, SessionState};
 
 use dioxus::prelude::*;
-use dioxus_i18n::prelude::i18n;
+use dioxus_i18n::prelude::*;
 use dioxus_i18n::t;
 
 #[cfg(target_arch = "wasm32")]
@@ -38,7 +38,7 @@ pub fn StorefrontPage() -> Element {
                 }
                 div { class: "header-actions",
                     button {
-                        class: "btn-secondary btn-sm",
+                        class: "btn-secondary",
                         onclick: move |_| {
                             use unic_langid::langid;
                             let mut i18n = i18n();
@@ -120,14 +120,11 @@ pub fn StorefrontPage() -> Element {
                             }
                             div { class: "price", {t!("price_per_month", price: plan.monthly_price.clone())} }
                             button {
-                                class: "btn-secondary",
+                                class: "btn-secondary full",
                                 onclick: {
                                     let code = plan.code.clone();
                                     move |_| {
-                                        navigator
-                                            .push(Route::OrderPage {
-                                                plan: code.clone(),
-                                            });
+                                        navigator.push(Route::OrderPage { plan: code.clone() });
                                     }
                                 },
                                 "{t!(\"select_btn\")}"
@@ -166,13 +163,20 @@ pub fn OrderPage(plan: String) -> Element {
         }
     });
 
-    let default_plan = if plan.is_empty() {
-        "nat-standard".to_string()
-    } else {
-        plan.clone()
-    };
+    let mut selected_plan = use_signal(|| {
+        if plan.is_empty() {
+            "nat-standard".to_string()
+        } else {
+            plan.clone()
+        }
+    });
 
-    let mut selected_plan = use_signal(|| default_plan);
+    use_effect(move || {
+        if !plan.is_empty() {
+            selected_plan.set(plan.clone());
+        }
+    });
+
     let checkout_loading = use_signal(|| false);
     let checkout_error = use_signal(|| None::<String>);
 
@@ -236,7 +240,7 @@ pub fn OrderPage(plan: String) -> Element {
                 h1 { "{t!(\"create_order_title\")}" }
                 div { class: "flex-row", style: "gap: 10px;",
                     button {
-                        class: "btn-secondary btn-sm",
+                        class: "btn-secondary",
                         onclick: move |_| {
                             use unic_langid::langid;
                             let mut i18n = i18n();

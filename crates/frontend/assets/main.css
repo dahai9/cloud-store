@@ -412,7 +412,7 @@ body::before {
   width: 100%;
   border: 1px solid #d6e0f4;
   border-radius: 10px;
-  height: 36px;
+  height: 38px;
   padding: 0 10px;
   background: #fff;
   transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
@@ -534,7 +534,7 @@ body::before {
   border-radius: 10px;
   background: #fff;
   color: var(--accent);
-  height: 36px;
+  height: 38px;
   padding: 0 16px;
   font-weight: 600;
   cursor: pointer;
@@ -556,7 +556,7 @@ body::before {
   border-radius: 10px;
   background: #1dbf73;
   color: #fff;
-  height: 36px;
+  height: 38px;
   padding: 0 16px;
   font-weight: 600;
   cursor: pointer;

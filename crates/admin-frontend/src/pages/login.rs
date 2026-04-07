@@ -86,7 +86,7 @@ pub fn LoginPage() -> Element {
             div {
                 style: "display: flex; justify-content: flex-end; margin-bottom: 20px;",
                 button {
-                    class: "btn-secondary btn-sm",
+                    class: "btn-secondary",
                     onclick: move |_| {
                         use unic_langid::langid;
                         if i18n.language() == langid!("en-US") {

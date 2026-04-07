@@ -2,7 +2,6 @@ use crate::models::{AdminSessionState, Route};
 use dioxus::prelude::*;
 use dioxus_i18n::prelude::i18n;
 use dioxus_i18n::t;
-use unic_langid::langid;
 
 mod guests;
 mod instances;
@@ -121,7 +120,7 @@ pub fn DashboardLayout() -> Element {
 
                     div { class: "top-actions",
                         button {
-                            class: "btn-secondary btn-sm",
+                            class: "btn-secondary",
                             onclick: move |_| {
                                 use unic_langid::langid;
                                 if _i18n.language() == langid!("en-US") {
