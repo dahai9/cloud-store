@@ -331,19 +331,90 @@ button:active {
 .item {
   border: 1px solid var(--line);
   border-radius: 12px;
-  padding: 10px;
+  padding: 16px;
   display: grid;
-  gap: 4px;
-  background: linear-gradient(180deg, #fff 0%, #fbfdff 100%);
+  gap: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
 }
 
 .item strong {
-  font-size: 15px;
+  font-size: 16px;
+  color: var(--bg-ink);
+}
+
+.item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .meta {
   color: var(--muted);
   font-size: 13px;
+  font-family: inherit;
+  opacity: 0.8;
+}
+
+.metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.metric {
+  display: grid;
+  grid-template-columns: 80px 1fr 100px;
+  align-items: center;
+  gap: 16px;
+}
+
+.metric span {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.progress-track {
+  height: 8px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.6s cubic-bezier(0.65, 0, 0.35, 1);
+  box-shadow: 0 0 10px rgba(0,0,0,0.05);
+}
+
+.progress-bar.ok { background: linear-gradient(90deg, #10b981, #34d399); }
+.progress-bar.warning { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+.progress-bar.danger { background: linear-gradient(90deg, #ef4444, #f87171); }
+
+.metric-value {
+  font-size: 13px;
+  font-weight: 600;
+  text-align: right;
+  color: var(--text);
+  font-family: inherit;
+}
+
+.meta-api {
+  font-size: 12px;
+  color: var(--muted);
+  background: #f1f5f9;
+  padding: 4px 10px;
+  border-radius: 6px;
+  width: fit-content;
 }
 
 @media (max-width: 960px) {
@@ -407,6 +478,7 @@ button:active {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   *,
   *::before,
   *::after {

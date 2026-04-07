@@ -348,7 +348,6 @@ pub fn NodesPage() -> Element {
                                             storage.set(n.storage_gb_total.to_string());
                                             endpoint.set(n.api_endpoint.clone().unwrap_or_default());
                                             api_token.set(n.api_token.clone().unwrap_or_default());
-
                                             editing_node.set(Some(n));
                                             show_add_form.set(false);
                                         }
@@ -359,25 +358,34 @@ pub fn NodesPage() -> Element {
                             span { class: "meta", "ID: {node.id} | Region: {node.region}" }
                             div { class: "metrics",
                                 div { class: "metric",
-                                    span { "CPU: {node.cpu_cores_used} / {node.cpu_cores_total} Cores" }
-                                    progress {
-                                        max: "{node.cpu_cores_total}",
-                                        value: "{node.cpu_cores_used}",
+                                    span { "CPU" }
+                                    div { class: "progress-track",
+                                        div {
+                                            class: format!("progress-bar {}", if node.cpu_cores_used as f64 / node.cpu_cores_total as f64 > 0.8 { "danger" } else { "ok" }),
+                                            style: "width: {node.cpu_cores_used as f64 / node.cpu_cores_total as f64 * 100.0}%",
+                                        }
                                     }
+                                    span { class: "metric-value", "{node.cpu_cores_used} / {node.cpu_cores_total} Cores" }
                                 }
                                 div { class: "metric",
-                                    span { "RAM: {node.memory_mb_used} / {node.memory_mb_total} MB" }
-                                    progress {
-                                        max: "{node.memory_mb_total}",
-                                        value: "{node.memory_mb_used}",
+                                    span { "RAM" }
+                                    div { class: "progress-track",
+                                        div {
+                                            class: format!("progress-bar {}", if node.memory_mb_used as f64 / node.memory_mb_total as f64 > 0.8 { "danger" } else { "ok" }),
+                                            style: "width: {node.memory_mb_used as f64 / node.memory_mb_total as f64 * 100.0}%",
+                                        }
                                     }
+                                    span { class: "metric-value", "{node.memory_mb_used} / {node.memory_mb_total} MB" }
                                 }
                                 div { class: "metric",
-                                    span { "Disk: {node.storage_gb_used} / {node.storage_gb_total} GB" }
-                                    progress {
-                                        max: "{node.storage_gb_total}",
-                                        value: "{node.storage_gb_used}",
+                                    span { "Disk" }
+                                    div { class: "progress-track",
+                                        div {
+                                            class: format!("progress-bar {}", if node.storage_gb_used as f64 / node.storage_gb_total as f64 > 0.8 { "danger" } else { "ok" }),
+                                            style: "width: {node.storage_gb_used as f64 / node.storage_gb_total as f64 * 100.0}%",
+                                        }
                                     }
+                                    span { class: "metric-value", "{node.storage_gb_used} / {node.storage_gb_total} GB" }
                                 }
                             }
                             if let Some(ep) = &node.api_endpoint {
