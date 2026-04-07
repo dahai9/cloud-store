@@ -259,4 +259,3 @@ pub fn NatPortLeasesPage() -> Element {
         }
     }
 }
-

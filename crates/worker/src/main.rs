@@ -305,17 +305,21 @@ async fn run_renewal_tick(db: &SqlitePool) -> anyhow::Result<()> {
         let sub_id: String = sub.get("id");
         let user_id: String = sub.get("user_id");
         let instance_id: String = sub.get("instance_id");
-        let monthly_price: Decimal = sub.get::<String, _>("monthly_price").parse().unwrap_or(Decimal::ZERO);
+        let monthly_price: Decimal = sub
+            .get::<String, _>("monthly_price")
+            .parse()
+            .unwrap_or(Decimal::ZERO);
         let plan_name: String = sub.get("plan_name");
         let current_end: String = sub.get("current_period_end");
 
         // 2. Check user balance
-        let balance: Decimal = sqlx::query_scalar::<_, String>("SELECT CAST(balance AS TEXT) FROM users WHERE id = ?")
-            .bind(&user_id)
-            .fetch_one(db)
-            .await?
-            .parse()
-            .unwrap_or(Decimal::ZERO);
+        let balance: Decimal =
+            sqlx::query_scalar::<_, String>("SELECT CAST(balance AS TEXT) FROM users WHERE id = ?")
+                .bind(&user_id)
+                .fetch_one(db)
+                .await?
+                .parse()
+                .unwrap_or(Decimal::ZERO);
 
         if balance >= monthly_price {
             info!(instance_id = %instance_id, user_id = %user_id, "processing auto-renewal");
@@ -347,7 +351,7 @@ async fn run_renewal_tick(db: &SqlitePool) -> anyhow::Result<()> {
                 "UPDATE subscriptions SET current_period_start = current_period_end, 
                  current_period_end = datetime(current_period_end, '+1 month'),
                  updated_at = CURRENT_TIMESTAMP
-                 WHERE id = ?"
+                 WHERE id = ?",
             )
             .bind(&sub_id)
             .execute(&mut *tx)

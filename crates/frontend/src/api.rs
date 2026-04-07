@@ -513,11 +513,7 @@ pub async fn reply_ticket(
         .map_err(|e| format!("failed to parse message: {e}"))
 }
 
-pub async fn close_ticket(
-    api_base: &str,
-    token: &str,
-    ticket_id: &str,
-) -> Result<(), String> {
+pub async fn close_ticket(api_base: &str, token: &str, ticket_id: &str) -> Result<(), String> {
     let client = Client::new();
     let url = format!("{api_base}/api/tickets/{ticket_id}/close");
     let resp = client

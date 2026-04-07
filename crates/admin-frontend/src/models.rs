@@ -234,7 +234,6 @@ pub struct TicketMessageItem {
     pub created_at: String,
 }
 
-
 #[derive(Clone, Serialize)]
 pub struct TicketStatusUpdateRequest {
     pub status: String,

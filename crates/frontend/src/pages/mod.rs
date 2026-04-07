@@ -18,8 +18,14 @@ pub use public::{OrderPage, StorefrontPage};
 pub fn App() -> Element {
     let _i18n = use_init_i18n(|| {
         I18nConfig::new(langid!("en-US"))
-            .with_locale(Locale::new_static(langid!("en-US"), include_str!("../../../frontend/i18n/en-US.ftl")))
-            .with_locale(Locale::new_static(langid!("zh-CN"), include_str!("../../../frontend/i18n/zh-CN.ftl")))
+            .with_locale(Locale::new_static(
+                langid!("en-US"),
+                include_str!("../../../frontend/i18n/en-US.ftl"),
+            ))
+            .with_locale(Locale::new_static(
+                langid!("zh-CN"),
+                include_str!("../../../frontend/i18n/zh-CN.ftl"),
+            ))
     });
 
     let session = use_signal(api::load_initial_session);
@@ -49,7 +55,6 @@ pub fn App() -> Element {
                     current.balance_transactions = bundle.balance_transactions;
                     current.loading = false;
                     current.error = None;
-
                 }
                 Err(err) => {
                     let mut current = session.write();

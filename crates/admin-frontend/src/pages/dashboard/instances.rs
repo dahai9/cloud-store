@@ -121,4 +121,3 @@ pub fn InstancesPage() -> Element {
         }
     }
 }
-

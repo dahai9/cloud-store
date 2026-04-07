@@ -252,7 +252,8 @@ impl Grid {
         for row_offset in 0..rows_to_copy {
             let old_row = &old_lines[old_start + row_offset];
             let cols_to_copy = old_row.len().min(new_cols);
-            new_lines[new_start + row_offset][..cols_to_copy].copy_from_slice(&old_row[..cols_to_copy]);
+            new_lines[new_start + row_offset][..cols_to_copy]
+                .copy_from_slice(&old_row[..cols_to_copy]);
         }
 
         self.rows = new_rows;

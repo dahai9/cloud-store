@@ -261,7 +261,6 @@ pub async fn require_admin_from_token(
     Ok(user)
 }
 
-
 pub async fn ensure_single_admin(
     state: &AppState,
     bootstrap_email: Option<String>,

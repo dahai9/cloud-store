@@ -464,7 +464,10 @@ pub async fn admin_add_instance(
     let _ = auth::require_admin(&headers, &state).await?;
 
     if !has_open_after_sales_ticket(&state.db, &payload.user_id).await {
-        return Err((StatusCode::FORBIDDEN, "User must have an open AfterSales ticket to add an instance manually."));
+        return Err((
+            StatusCode::FORBIDDEN,
+            "User must have an open AfterSales ticket to add an instance manually.",
+        ));
     }
 
     // Basic validation: user exists?
@@ -492,11 +495,12 @@ pub async fn admin_add_instance(
     let idempotency_key = format!("admin-manual-{}", order_id);
 
     // Get plan price for the order
-    let price: f64 = sqlx::query_scalar::<_, f64>("SELECT monthly_price FROM nat_plans WHERE id = ?")
-        .bind(&payload.plan_id)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
+    let price: f64 =
+        sqlx::query_scalar::<_, f64>("SELECT monthly_price FROM nat_plans WHERE id = ?")
+            .bind(&payload.plan_id)
+            .fetch_one(&state.db)
+            .await
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
 
     sqlx::query(
         "INSERT INTO orders (id, user_id, plan_id, status, total_amount, idempotency_key) VALUES (?, ?, ?, 'paid', ?, ?)"
@@ -534,7 +538,7 @@ pub async fn admin_delete_instance(
 
     // Get instance info
     let instance = sqlx::query_as::<_, (String, String, String)>(
-        "SELECT id, user_id, status FROM instances WHERE id = ? LIMIT 1"
+        "SELECT id, user_id, status FROM instances WHERE id = ? LIMIT 1",
     )
     .bind(&instance_id)
     .fetch_optional(&state.db)
@@ -547,21 +551,37 @@ pub async fn admin_delete_instance(
     }
 
     if !has_open_after_sales_ticket(&state.db, &instance.1).await {
-        return Err((StatusCode::FORBIDDEN, "User must have an open AfterSales ticket to delete an instance manually."));
+        return Err((
+            StatusCode::FORBIDDEN,
+            "User must have an open AfterSales ticket to delete an instance manually.",
+        ));
     }
 
-    let refund_amount: f64 = payload.refund_amount.unwrap_or_else(|| "0".to_string())
+    let refund_amount: f64 = payload
+        .refund_amount
+        .unwrap_or_else(|| "0".to_string())
         .parse()
         .map_err(|_| (StatusCode::BAD_REQUEST, "invalid refund amount"))?;
 
-    let mut tx = state.db.begin().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
+    let mut tx = state
+        .db
+        .begin()
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
 
     // Mark as deleted
-    sqlx::query("UPDATE instances SET status = 'deleted', updated_at = CURRENT_TIMESTAMP WHERE id = ?")
-        .bind(&instance_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to update instance"))?;
+    sqlx::query(
+        "UPDATE instances SET status = 'deleted', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+    )
+    .bind(&instance_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to update instance",
+        )
+    })?;
 
     if refund_amount > 0.0 {
         // Add balance to user
@@ -570,7 +590,12 @@ pub async fn admin_delete_instance(
             .bind(&instance.1)
             .execute(&mut *tx)
             .await
-            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to update user balance"))?;
+            .map_err(|_| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to update user balance",
+                )
+            })?;
 
         // Create transaction record
         let tx_id = uuid::Uuid::new_v4().to_string();
@@ -587,7 +612,12 @@ pub async fn admin_delete_instance(
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to create balance transaction"))?;
     }
 
-    tx.commit().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to commit transaction"))?;
+    tx.commit().await.map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to commit transaction",
+        )
+    })?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -600,7 +630,11 @@ pub async fn admin_create_ticket(
     let admin = auth::require_admin(&headers, &state).await?;
 
     let ticket_id = uuid::Uuid::new_v4().to_string();
-    let mut tx = state.db.begin().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
+    let mut tx = state
+        .db
+        .begin()
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
 
     sqlx::query(
         "INSERT INTO support_tickets (id, user_id, category, priority, subject, status) VALUES (?, ?, ?, ?, ?, 'open')"
@@ -619,7 +653,7 @@ pub async fn admin_create_ticket(
 
     let message_id = uuid::Uuid::new_v4().to_string();
     sqlx::query(
-        "INSERT INTO support_messages (id, ticket_id, sender_user_id, message) VALUES (?, ?, ?, ?)"
+        "INSERT INTO support_messages (id, ticket_id, sender_user_id, message) VALUES (?, ?, ?, ?)",
     )
     .bind(&message_id)
     .bind(&ticket_id)
@@ -627,9 +661,16 @@ pub async fn admin_create_ticket(
     .bind(&payload.message)
     .execute(&mut *tx)
     .await
-    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to create initial message"))?;
+    .map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to create initial message",
+        )
+    })?;
 
-    tx.commit().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to commit"))?;
+    tx.commit()
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to commit"))?;
 
     Ok(Json(crate::tickets::TicketItem {
         id: ticket_id,
@@ -1097,7 +1138,8 @@ pub async fn list_instances(
         )
         .fetch_all(&state.db)
         .await
-    }.map_err(|err| {
+    }
+    .map_err(|err| {
         error!(error = %err, "failed to list instances");
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -1168,8 +1210,8 @@ pub async fn admin_perform_action(
 
     let mut response_password = None;
     use crate::instances::InstanceAction;
-    use shared_domain::{InstanceStatus, DEFAULT_OS_TEMPLATE};
     use provider_adapter::ComputeProvider;
+    use shared_domain::{InstanceStatus, DEFAULT_OS_TEMPLATE};
 
     let action_str = match &payload.action {
         InstanceAction::Start => "start",
@@ -1185,7 +1227,8 @@ pub async fn admin_perform_action(
                 .start_instance(&node_conn, &provider_instance_id)
                 .await;
             if res.is_ok() {
-                let _ = crate::instances::update_status(&state, &id, InstanceStatus::Starting).await;
+                let _ =
+                    crate::instances::update_status(&state, &id, InstanceStatus::Starting).await;
             }
             res.map_err(|e| e.to_string())
         }
@@ -1203,12 +1246,14 @@ pub async fn admin_perform_action(
                 .restart_instance(&node_conn, &provider_instance_id)
                 .await;
             if res.is_ok() {
-                let _ = crate::instances::update_status(&state, &id, InstanceStatus::Starting).await;
+                let _ =
+                    crate::instances::update_status(&state, &id, InstanceStatus::Starting).await;
             }
             res.map_err(|e| e.to_string())
         }
         InstanceAction::ResetPassword { new_password } => {
-            let pwd = new_password.unwrap_or_else(|| crate::instances::generate_strong_password(11));
+            let pwd =
+                new_password.unwrap_or_else(|| crate::instances::generate_strong_password(11));
             let res = provider
                 .reset_password(&node_conn, &provider_instance_id, &pwd)
                 .await;
@@ -1266,4 +1311,3 @@ pub async fn admin_perform_action(
         }
     }
 }
-

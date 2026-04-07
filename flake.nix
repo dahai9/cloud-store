@@ -47,6 +47,7 @@
             ngrok
             just
             git
+            pre-commit
             websocketd
           ];
 

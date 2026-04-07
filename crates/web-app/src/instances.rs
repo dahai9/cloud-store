@@ -46,12 +46,13 @@ pub async fn update_auto_renew(
     let user = auth::require_user(&headers, &state).await?;
 
     // Verify ownership
-    let exists = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM instances WHERE id = ? AND user_id = ?")
-        .bind(&id)
-        .bind(&user.id)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
+    let exists =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM instances WHERE id = ? AND user_id = ?")
+            .bind(&id)
+            .bind(&user.id)
+            .fetch_one(&state.db)
+            .await
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
     if exists == 0 {
         return Err((StatusCode::FORBIDDEN, "access denied"));
     }
@@ -63,7 +64,10 @@ pub async fn update_auto_renew(
         .await
         .map_err(|err| {
             error!(error = %err, instance_id = %id, "failed to update auto_renew");
-            (StatusCode::INTERNAL_SERVER_ERROR, "failed to update settings")
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to update settings",
+            )
         })?;
 
     get_instance(State(state), headers, Path(id)).await
@@ -1084,10 +1088,7 @@ async fn relay_console(
                         }
                     }
                     Ok(AxumMessage::Ping(payload)) => {
-                        if data_send_tx
-                            .send(TungMessage::Ping(payload))
-                            .is_err()
-                        {
+                        if data_send_tx.send(TungMessage::Ping(payload)).is_err() {
                             break;
                         }
                     }
@@ -1112,11 +1113,7 @@ async fn relay_console(
                 match msg {
                     Ok(TungMessage::Binary(data)) => {
                         incus_msg_count += 1;
-                        if browser_sink
-                            .send(AxumMessage::Binary(data))
-                            .await
-                            .is_err()
-                        {
+                        if browser_sink.send(AxumMessage::Binary(data)).await.is_err() {
                             break;
                         }
                     }

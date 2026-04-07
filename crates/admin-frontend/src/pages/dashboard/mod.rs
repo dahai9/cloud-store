@@ -146,4 +146,3 @@ pub fn DashboardLayout() -> Element {
         }
     }
 }
-

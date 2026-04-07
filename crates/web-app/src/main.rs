@@ -218,7 +218,10 @@ fn build_guest_router(app_state: AppState) -> Router {
             "/api/user/balance/transactions",
             get(billing::list_balance_transactions),
         )
-        .route("/api/user/balance/recharge", post(billing::recharge_balance))
+        .route(
+            "/api/user/balance/recharge",
+            post(billing::recharge_balance),
+        )
         .route("/api/invoices", get(billing::list_invoices))
         .route("/api/instances", get(instances::list_instances))
         .route("/api/instances/{id}", get(instances::get_instance))

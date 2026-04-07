@@ -48,17 +48,23 @@ pub fn TicketsPage() -> Element {
             use wasm_bindgen::JsCast;
             use web_sys::{EventSource, MessageEvent};
 
-            let url = format!("{}/api/admin/tickets/{}/messages?token={}", api_base, tid, token);
+            let url = format!(
+                "{}/api/admin/tickets/{}/messages?token={}",
+                api_base, tid, token
+            );
             if let Ok(es) = EventSource::new(&url) {
                 let onmessage = Closure::wrap(Box::new(move |e: MessageEvent| {
                     if let Some(txt) = e.data().as_string() {
-                        if let Ok(msg) = serde_json::from_str::<crate::models::TicketMessageItem>(&txt) {
+                        if let Ok(msg) =
+                            serde_json::from_str::<crate::models::TicketMessageItem>(&txt)
+                        {
                             ticket_messages.with_mut(|msgs| msgs.push(msg));
                         }
                     }
                 }) as Box<dyn FnMut(MessageEvent)>);
 
-                es.add_event_listener_with_callback("message", onmessage.as_ref().unchecked_ref()).unwrap();
+                es.add_event_listener_with_callback("message", onmessage.as_ref().unchecked_ref())
+                    .unwrap();
                 onmessage.forget();
 
                 let mut session_clone = session.clone();
@@ -74,10 +80,12 @@ pub fn TicketsPage() -> Element {
                     }
                 }) as Box<dyn FnMut(MessageEvent)>);
 
-                es.add_event_listener_with_callback("status", onstatus.as_ref().unchecked_ref()).unwrap();
+                es.add_event_listener_with_callback("status", onstatus.as_ref().unchecked_ref())
+                    .unwrap();
                 onstatus.forget();
 
-                active_sse.set(Some(es));            }
+                active_sse.set(Some(es));
+            }
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -180,7 +188,11 @@ pub fn TicketsPage() -> Element {
         }
     };
 
-    let selected_ticket = session().tickets.iter().find(|t| t.id == selected_ticket_id()).cloned();
+    let selected_ticket = session()
+        .tickets
+        .iter()
+        .find(|t| t.id == selected_ticket_id())
+        .cloned();
 
     rsx! {
         section { class: "card", id: "tickets",
@@ -313,4 +325,3 @@ pub fn TicketsPage() -> Element {
         }
     }
 }
-

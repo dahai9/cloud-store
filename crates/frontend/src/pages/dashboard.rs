@@ -675,15 +675,22 @@ pub fn TicketsPage() -> Element {
                 if let Ok(es) = EventSource::new(&url) {
                     let onmessage = Closure::wrap(Box::new(move |e: MessageEvent| {
                         if let Some(txt) = e.data().as_string() {
-                            if let Ok(msg) = serde_json::from_str::<crate::models::TicketMessageItem>(&txt) {
+                            if let Ok(msg) =
+                                serde_json::from_str::<crate::models::TicketMessageItem>(&txt)
+                            {
                                 ticket_messages.with_mut(|msgs| msgs.push(msg));
                             }
                         }
-                    }) as Box<dyn FnMut(MessageEvent)>);
+                    })
+                        as Box<dyn FnMut(MessageEvent)>);
 
-                    es.add_event_listener_with_callback("message", onmessage.as_ref().unchecked_ref()).unwrap();
+                    es.add_event_listener_with_callback(
+                        "message",
+                        onmessage.as_ref().unchecked_ref(),
+                    )
+                    .unwrap();
                     onmessage.forget();
-                    
+
                     let mut session_clone = session.clone();
                     let tid_clone = tid.clone();
                     let onstatus = Closure::wrap(Box::new(move |e: MessageEvent| {
@@ -693,11 +700,16 @@ pub fn TicketsPage() -> Element {
                                 ticket.status = status_str;
                             }
                         }
-                    }) as Box<dyn FnMut(MessageEvent)>);
+                    })
+                        as Box<dyn FnMut(MessageEvent)>);
 
-                    es.add_event_listener_with_callback("status", onstatus.as_ref().unchecked_ref()).unwrap();
+                    es.add_event_listener_with_callback(
+                        "status",
+                        onstatus.as_ref().unchecked_ref(),
+                    )
+                    .unwrap();
                     onstatus.forget();
-                    
+
                     active_sse.set(Some(es));
                 }
             }
@@ -720,10 +732,30 @@ pub fn TicketsPage() -> Element {
                 use web_sys::HtmlTextAreaElement;
                 let window = web_sys::window().unwrap();
                 let document = window.document().unwrap();
-                let subject = document.get_element_by_id("ticket_subject").unwrap().dyn_into::<HtmlInputElement>().unwrap().value();
-                let category = document.get_element_by_id("ticket_category").unwrap().dyn_into::<HtmlSelectElement>().unwrap().value();
-                let priority = document.get_element_by_id("ticket_priority").unwrap().dyn_into::<HtmlSelectElement>().unwrap().value();
-                let message = document.get_element_by_id("ticket_message").unwrap().dyn_into::<HtmlTextAreaElement>().unwrap().value();
+                let subject = document
+                    .get_element_by_id("ticket_subject")
+                    .unwrap()
+                    .dyn_into::<HtmlInputElement>()
+                    .unwrap()
+                    .value();
+                let category = document
+                    .get_element_by_id("ticket_category")
+                    .unwrap()
+                    .dyn_into::<HtmlSelectElement>()
+                    .unwrap()
+                    .value();
+                let priority = document
+                    .get_element_by_id("ticket_priority")
+                    .unwrap()
+                    .dyn_into::<HtmlSelectElement>()
+                    .unwrap()
+                    .value();
+                let message = document
+                    .get_element_by_id("ticket_message")
+                    .unwrap()
+                    .dyn_into::<HtmlTextAreaElement>()
+                    .unwrap()
+                    .value();
 
                 if !subject.is_empty() && !message.is_empty() {
                     let api_base = api_base.clone();
@@ -739,7 +771,9 @@ pub fn TicketsPage() -> Element {
                         match api::create_ticket(&api_base, &token, &payload).await {
                             Ok(_) => {
                                 show_create_form.set(false);
-                                if let Ok(bundle) = api::load_authenticated_bundle(&api_base, &token).await {
+                                if let Ok(bundle) =
+                                    api::load_authenticated_bundle(&api_base, &token).await
+                                {
                                     let mut s = session.write();
                                     s.tickets = bundle.tickets;
                                     s.loading = false;
@@ -773,7 +807,12 @@ pub fn TicketsPage() -> Element {
                 use web_sys::HtmlTextAreaElement;
                 let window = web_sys::window().unwrap();
                 let document = window.document().unwrap();
-                let message = document.get_element_by_id("reply_message").unwrap().dyn_into::<HtmlTextAreaElement>().unwrap().value();
+                let message = document
+                    .get_element_by_id("reply_message")
+                    .unwrap()
+                    .dyn_into::<HtmlTextAreaElement>()
+                    .unwrap()
+                    .value();
                 let ticket_id = selected_ticket_id().unwrap();
 
                 if !message.trim().is_empty() {
@@ -789,7 +828,9 @@ pub fn TicketsPage() -> Element {
                                     let window = web_sys::window().unwrap();
                                     let document = window.document().unwrap();
                                     if let Some(el) = document.get_element_by_id("reply_message") {
-                                        if let Ok(ta) = el.dyn_into::<web_sys::HtmlTextAreaElement>() {
+                                        if let Ok(ta) =
+                                            el.dyn_into::<web_sys::HtmlTextAreaElement>()
+                                        {
                                             ta.set_value("");
                                         }
                                     }
@@ -819,7 +860,8 @@ pub fn TicketsPage() -> Element {
             spawn(async move {
                 match api::close_ticket(&api_base, &token, &ticket_id).await {
                     Ok(_) => {
-                        if let Ok(bundle) = api::load_authenticated_bundle(&api_base, &token).await {
+                        if let Ok(bundle) = api::load_authenticated_bundle(&api_base, &token).await
+                        {
                             let mut s = session.write();
                             s.tickets = bundle.tickets;
                         }
@@ -833,7 +875,8 @@ pub fn TicketsPage() -> Element {
         }
     };
 
-    let selected_ticket = selected_ticket_id().and_then(|id| state.tickets.iter().find(|t| t.id == id));
+    let selected_ticket =
+        selected_ticket_id().and_then(|id| state.tickets.iter().find(|t| t.id == id));
 
     rsx! {
         DashboardShell { title: "{t!(\"dash_ticket_center\")}", active_tab: DashboardTab::Tickets,
@@ -1624,7 +1667,10 @@ fn MetricCardWithChart(
         // To create a filled area, we need to close the shape by adding bottom-right and bottom-left points
         let mut fill_p = line_p.clone();
         if let Some((last_x, _)) = coords.last() {
-            fill_p.push_str(&format!(" {:.1},{:.1} {:.1},{:.1}", last_x, height, 0, height));
+            fill_p.push_str(&format!(
+                " {:.1},{:.1} {:.1},{:.1}",
+                last_x, height, 0, height
+            ));
         }
 
         (line_p, fill_p)
@@ -1664,4 +1710,3 @@ fn MetricCardWithChart(
         }
     }
 }
-

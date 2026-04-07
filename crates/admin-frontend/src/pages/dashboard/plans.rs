@@ -138,7 +138,9 @@ pub fn PlansPage() -> Element {
                         is_creating.set(false);
                         match api::get_plans(&api_base, &token).await {
                             Ok(plans) => session.write().plans = plans,
-                            Err(e) => session.write().error = Some(t!("nodes_error_refresh", err: e)),
+                            Err(e) => {
+                                session.write().error = Some(t!("nodes_error_refresh", err: e))
+                            }
                         }
                     }
                     Err(e) => session.write().error = Some(t!("nodes_error_add", err: e)),
@@ -163,7 +165,9 @@ pub fn PlansPage() -> Element {
                         is_editing.set(false);
                         match api::get_plans(&api_base, &token).await {
                             Ok(plans) => session.write().plans = plans,
-                            Err(e) => session.write().error = Some(t!("nodes_error_refresh", err: e)),
+                            Err(e) => {
+                                session.write().error = Some(t!("nodes_error_refresh", err: e))
+                            }
                         }
                     }
                     Err(e) => session.write().error = Some(t!("nodes_error_update", err: e)),
@@ -411,5 +415,3 @@ pub fn PlansPage() -> Element {
         }
     }
 }
-
-

@@ -1,5 +1,8 @@
 use crate::api;
-use crate::models::{AdminSessionState, GuestUpdateRequest, InstanceItem, ActionRequest, InstanceAction, AdminInstanceDeleteRequest};
+use crate::models::{
+    ActionRequest, AdminInstanceDeleteRequest, AdminSessionState, GuestUpdateRequest,
+    InstanceAction, InstanceItem,
+};
 use dioxus::prelude::*;
 use dioxus_i18n::t;
 
@@ -13,7 +16,11 @@ pub fn GuestsPage() -> Element {
     let refresh_guests = move |_| {
         let api_base = session().api_base.clone();
         let token = session().token.clone().unwrap_or_default();
-        let search = if search_query().is_empty() { None } else { Some(search_query()) };
+        let search = if search_query().is_empty() {
+            None
+        } else {
+            Some(search_query())
+        };
         spawn(async move {
             session.write().loading = true;
             match api::get_guests(&api_base, &token, search).await {
@@ -35,7 +42,11 @@ pub fn GuestsPage() -> Element {
             match api::update_guest(&api_base, &token, &user_id, &payload).await {
                 Ok(_) => {
                     session.write().notice = Some(t!("plans_update_success"));
-                    let search = if search_query().is_empty() { None } else { Some(search_query()) };
+                    let search = if search_query().is_empty() {
+                        None
+                    } else {
+                        Some(search_query())
+                    };
                     if let Ok(guests) = api::get_guests(&api_base, &token, search).await {
                         session.write().guests = guests;
                     }
@@ -66,7 +77,9 @@ pub fn GuestsPage() -> Element {
         let token = session().token.clone().unwrap_or_default();
         spawn(async move {
             session.write().loading = true;
-            let payload = ActionRequest { action: InstanceAction::Stop };
+            let payload = ActionRequest {
+                action: InstanceAction::Stop,
+            };
             match api::perform_instance_action(&api_base, &token, &instance_id, &payload).await {
                 Ok(_) => {
                     session.write().notice = Some(t!("instances_action_success"));
@@ -86,7 +99,9 @@ pub fn GuestsPage() -> Element {
         let token = session().token.clone().unwrap_or_default();
         spawn(async move {
             session.write().loading = true;
-            let payload = AdminInstanceDeleteRequest { refund_amount: Some("0.00".to_string()) };
+            let payload = AdminInstanceDeleteRequest {
+                refund_amount: Some("0.00".to_string()),
+            };
             match api::delete_instance(&api_base, &token, &instance_id, &payload).await {
                 Ok(_) => {
                     session.write().notice = Some(t!("instances_action_success"));
@@ -235,5 +250,3 @@ pub fn GuestsPage() -> Element {
         }
     }
 }
-
-

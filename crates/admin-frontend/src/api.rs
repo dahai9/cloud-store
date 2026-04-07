@@ -212,7 +212,9 @@ pub async fn perform_instance_action(
 ) -> Result<(), String> {
     let client = Client::new();
     let resp = client
-        .post(format!("{api_base}/api/admin/instances/{instance_id}/action"))
+        .post(format!(
+            "{api_base}/api/admin/instances/{instance_id}/action"
+        ))
         .header("Authorization", &format!("Bearer {token}"))
         .json(payload)
         .send()
@@ -459,11 +461,7 @@ pub async fn reply_ticket(
     Ok(())
 }
 
-pub async fn close_ticket(
-    api_base: &str,
-    token: &str,
-    ticket_id: &str,
-) -> Result<(), String> {
+pub async fn close_ticket(api_base: &str, token: &str, ticket_id: &str) -> Result<(), String> {
     let client = Client::new();
     let url = format!("{api_base}/api/admin/tickets/{ticket_id}/close");
     let resp = client

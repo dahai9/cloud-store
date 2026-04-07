@@ -221,9 +221,7 @@ pub fn OrderPage(plan: String) -> Element {
                     #[cfg(not(target_arch = "wasm32"))]
                     {
                         let _ = response;
-                        error.set(Some(
-                            t!("payment_error_not_supported").to_string(),
-                        ));
+                        error.set(Some(t!("payment_error_not_supported").to_string()));
                     }
                 }
                 Err(err) => {
@@ -345,9 +343,9 @@ pub fn OrderPage(plan: String) -> Element {
 
 fn format_traffic_gb(traffic_gb: i64) -> String {
     if traffic_gb == -1 {
-        // Warning: This helper is called outside of component scope. 
-        // Best approach is tracking it inside component, but if it has to be here, 
-        // we might run into issues with `t!` macro which requires context. 
+        // Warning: This helper is called outside of component scope.
+        // Best approach is tracking it inside component, but if it has to be here,
+        // we might run into issues with `t!` macro which requires context.
         // Actually, since Dioxus 0.5+ context isn't implicitly passed to arbitrary functions.
         // I will change it to return raw bytes and have it translated inside the macro.
         "Unlimited".to_string()

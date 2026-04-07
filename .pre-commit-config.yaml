@@ -1,0 +1,23 @@
+repos:
+  - repo: local
+    hooks:
+      - id: fmt
+        name: cargo-fmt
+        entry: just fmt
+        language: system
+        files: \.(rs|toml)$
+        pass_filenames: false
+
+      - id: clippy
+        name: cargo-clippy
+        entry: just clippy
+        language: system
+        files: \.rs$
+        pass_filenames: false
+
+      - id: check
+        name: cargo-check
+        entry: just check
+        language: system
+        files: \.rs$
+        pass_filenames: false

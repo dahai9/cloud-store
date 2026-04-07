@@ -14,8 +14,14 @@ pub use login::LoginPage;
 pub fn App() -> Element {
     let _i18n = use_init_i18n(|| {
         I18nConfig::new(langid!("en-US"))
-            .with_locale(Locale::new_static(langid!("en-US"), include_str!("../../../admin-frontend/i18n/en-US.ftl")))
-            .with_locale(Locale::new_static(langid!("zh-CN"), include_str!("../../../admin-frontend/i18n/zh-CN.ftl")))
+            .with_locale(Locale::new_static(
+                langid!("en-US"),
+                include_str!("../../../admin-frontend/i18n/en-US.ftl"),
+            ))
+            .with_locale(Locale::new_static(
+                langid!("zh-CN"),
+                include_str!("../../../admin-frontend/i18n/zh-CN.ftl"),
+            ))
     });
 
     let session = use_signal(|| AdminSessionState::new(api::default_api_base()));
