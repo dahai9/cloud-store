@@ -1,6 +1,6 @@
 use crate::auth;
 use crate::AppState;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use serde::{Deserialize, Serialize};
@@ -100,6 +100,7 @@ pub struct AdminPlanUpdateRequest {
 pub struct GuestItem {
     pub id: String,
     pub email: String,
+    pub balance: String,
     pub disabled: bool,
     pub created_at: String,
 }
@@ -107,6 +108,27 @@ pub struct GuestItem {
 #[derive(Deserialize)]
 pub struct GuestUpdateRequest {
     pub disabled: bool,
+}
+
+#[derive(Deserialize)]
+pub struct AdminInstanceCreateRequest {
+    pub user_id: String,
+    pub plan_id: String,
+    pub node_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct AdminInstanceDeleteRequest {
+    pub refund_amount: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct AdminTicketCreateRequest {
+    pub user_id: String,
+    pub category: String,
+    pub priority: String,
+    pub subject: String,
+    pub message: String,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -378,33 +400,246 @@ pub async fn update_plan(
     }))
 }
 
+#[derive(Deserialize)]
+pub struct GuestSearchQuery {
+    pub search: Option<String>,
+}
+
 pub async fn list_guests(
     State(state): State<AppState>,
+    Query(query): Query<GuestSearchQuery>,
     headers: HeaderMap,
 ) -> Result<Json<Vec<GuestItem>>, (StatusCode, &'static str)> {
     let _ = auth::require_admin(&headers, &state).await?;
 
-    let rows = sqlx::query_as::<_, (String, String, i64, String)>(
-        "SELECT id, email, COALESCE(disabled, 0), created_at FROM users WHERE role = 'user' ORDER BY created_at DESC LIMIT 200",
-    )
-    .fetch_all(&state.db)
-    .await
-    .map_err(|err| {
+    let search_pattern = query.search.unwrap_or_default().trim().to_string();
+
+    let rows = if search_pattern.is_empty() {
+        sqlx::query_as::<_, (String, String, String, i64, String)>(
+            "SELECT id, email, CAST(balance AS TEXT), COALESCE(disabled, 0), created_at FROM users WHERE role = 'user' ORDER BY created_at DESC LIMIT 200",
+        )
+        .fetch_all(&state.db)
+        .await
+    } else {
+        sqlx::query_as::<_, (String, String, String, i64, String)>(
+            "SELECT id, email, CAST(balance AS TEXT), COALESCE(disabled, 0), created_at FROM users WHERE role = 'user' AND (email LIKE ? OR id = ?) ORDER BY created_at DESC LIMIT 200",
+        )
+        .bind(format!("%{search_pattern}%"))
+        .bind(&search_pattern)
+        .fetch_all(&state.db)
+        .await
+    }.map_err(|err| {
         error!(error = %err, "failed to query guests");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to load guests")
     })?;
 
     let items = rows
         .into_iter()
-        .map(|(id, email, disabled, created_at)| GuestItem {
+        .map(|(id, email, balance, disabled, created_at)| GuestItem {
             id,
             email,
+            balance,
             disabled: disabled != 0,
             created_at,
         })
         .collect();
 
     Ok(Json(items))
+}
+
+async fn has_open_after_sales_ticket(db: &sqlx::SqlitePool, user_id: &str) -> bool {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM support_tickets WHERE user_id = ? AND category = 'AfterSales' AND status != 'closed'"
+    )
+    .bind(user_id)
+    .fetch_one(db)
+    .await
+    .unwrap_or(0) > 0
+}
+
+pub async fn admin_add_instance(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<AdminInstanceCreateRequest>,
+) -> Result<Json<InstanceItem>, (StatusCode, &'static str)> {
+    let _ = auth::require_admin(&headers, &state).await?;
+
+    if !has_open_after_sales_ticket(&state.db, &payload.user_id).await {
+        return Err((StatusCode::FORBIDDEN, "User must have an open AfterSales ticket to add an instance manually."));
+    }
+
+    // Basic validation: user exists?
+    let user_exists = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users WHERE id = ?")
+        .bind(&payload.user_id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
+    if user_exists == 0 {
+        return Err((StatusCode::NOT_FOUND, "user not found"));
+    }
+
+    // Plan exists?
+    let plan_exists = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM nat_plans WHERE id = ?")
+        .bind(&payload.plan_id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
+    if plan_exists == 0 {
+        return Err((StatusCode::NOT_FOUND, "plan not found"));
+    }
+
+    // We create a "paid" order so the worker picks it up
+    let order_id = uuid::Uuid::new_v4().to_string();
+    let idempotency_key = format!("admin-manual-{}", order_id);
+
+    // Get plan price for the order
+    let price: f64 = sqlx::query_scalar::<_, f64>("SELECT monthly_price FROM nat_plans WHERE id = ?")
+        .bind(&payload.plan_id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
+
+    sqlx::query(
+        "INSERT INTO orders (id, user_id, plan_id, status, total_amount, idempotency_key) VALUES (?, ?, ?, 'paid', ?, ?)"
+    )
+    .bind(&order_id)
+    .bind(&payload.user_id)
+    .bind(&payload.plan_id)
+    .bind(price)
+    .bind(&idempotency_key)
+    .execute(&state.db)
+    .await
+    .map_err(|err| {
+        error!(error = %err, "failed to create admin order");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to initiate provisioning")
+    })?;
+
+    Ok(Json(InstanceItem {
+        id: "Pending".to_string(),
+        user_email: payload.user_id, // This is just a placeholder until it's provisioned
+        node_name: "TBD".to_string(),
+        plan_name: "TBD".to_string(),
+        status: "provisioning".to_string(),
+        os_template: "TBD".to_string(),
+        created_at: "Now".to_string(),
+    }))
+}
+
+pub async fn admin_delete_instance(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(instance_id): Path<String>,
+    Json(payload): Json<AdminInstanceDeleteRequest>,
+) -> Result<StatusCode, (StatusCode, &'static str)> {
+    let _ = auth::require_admin(&headers, &state).await?;
+
+    // Get instance info
+    let instance = sqlx::query_as::<_, (String, String, String)>(
+        "SELECT id, user_id, status FROM instances WHERE id = ? LIMIT 1"
+    )
+    .bind(&instance_id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?
+    .ok_or((StatusCode::NOT_FOUND, "instance not found"))?;
+
+    if instance.2 == "deleted" {
+        return Err((StatusCode::BAD_REQUEST, "instance already deleted"));
+    }
+
+    if !has_open_after_sales_ticket(&state.db, &instance.1).await {
+        return Err((StatusCode::FORBIDDEN, "User must have an open AfterSales ticket to delete an instance manually."));
+    }
+
+    let refund_amount: f64 = payload.refund_amount.unwrap_or_else(|| "0".to_string())
+        .parse()
+        .map_err(|_| (StatusCode::BAD_REQUEST, "invalid refund amount"))?;
+
+    let mut tx = state.db.begin().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
+
+    // Mark as deleted
+    sqlx::query("UPDATE instances SET status = 'deleted', updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        .bind(&instance_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to update instance"))?;
+
+    if refund_amount > 0.0 {
+        // Add balance to user
+        sqlx::query("UPDATE users SET balance = balance + ? WHERE id = ?")
+            .bind(refund_amount)
+            .bind(&instance.1)
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to update user balance"))?;
+
+        // Create transaction record
+        let tx_id = uuid::Uuid::new_v4().to_string();
+        let description = format!("Refund for instance {}", instance_id);
+        sqlx::query(
+            "INSERT INTO balance_transactions (id, user_id, amount, type, description) VALUES (?, ?, ?, 'refund', ?)"
+        )
+        .bind(&tx_id)
+        .bind(&instance.1)
+        .bind(refund_amount)
+        .bind(&description)
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to create balance transaction"))?;
+    }
+
+    tx.commit().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to commit transaction"))?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn admin_create_ticket(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<AdminTicketCreateRequest>,
+) -> Result<Json<crate::tickets::TicketItem>, (StatusCode, &'static str)> {
+    let admin = auth::require_admin(&headers, &state).await?;
+
+    let ticket_id = uuid::Uuid::new_v4().to_string();
+    let mut tx = state.db.begin().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
+
+    sqlx::query(
+        "INSERT INTO support_tickets (id, user_id, category, priority, subject, status) VALUES (?, ?, ?, ?, ?, 'open')"
+    )
+    .bind(&ticket_id)
+    .bind(&payload.user_id)
+    .bind(&payload.category)
+    .bind(&payload.priority)
+    .bind(&payload.subject)
+    .execute(&mut *tx)
+    .await
+    .map_err(|err| {
+        error!(error = %err, "failed to create ticket");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to create ticket")
+    })?;
+
+    let message_id = uuid::Uuid::new_v4().to_string();
+    sqlx::query(
+        "INSERT INTO support_messages (id, ticket_id, sender_user_id, message) VALUES (?, ?, ?, ?)"
+    )
+    .bind(&message_id)
+    .bind(&ticket_id)
+    .bind(&admin.id)
+    .bind(&payload.message)
+    .execute(&mut *tx)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to create initial message"))?;
+
+    tx.commit().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to commit"))?;
+
+    Ok(Json(crate::tickets::TicketItem {
+        id: ticket_id,
+        user_id: payload.user_id,
+        subject: payload.subject,
+        category: payload.category,
+        priority: payload.priority,
+        status: "open".to_string(),
+    }))
 }
 
 pub async fn update_guest(
@@ -415,8 +650,8 @@ pub async fn update_guest(
 ) -> Result<Json<GuestItem>, (StatusCode, &'static str)> {
     let _ = auth::require_admin(&headers, &state).await?;
 
-    let target = sqlx::query_as::<_, (String, String, String, i64, String)>(
-        "SELECT id, email, role, COALESCE(disabled, 0), created_at FROM users WHERE id = ? LIMIT 1",
+    let target = sqlx::query_as::<_, (String, String, String, String, i64, String)>(
+        "SELECT id, email, role, CAST(balance AS TEXT), COALESCE(disabled, 0), created_at FROM users WHERE id = ? LIMIT 1",
     )
     .bind(&user_id)
     .fetch_optional(&state.db)
@@ -447,8 +682,9 @@ pub async fn update_guest(
     Ok(Json(GuestItem {
         id: target.0,
         email: target.1,
+        balance: target.3,
         disabled: payload.disabled,
-        created_at: target.4,
+        created_at: target.5,
     }))
 }
 

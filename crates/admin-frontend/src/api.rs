@@ -1,8 +1,9 @@
 use crate::models::{
-    AdminPlanCreateRequest, AdminPlanItem, AdminPlanUpdateRequest, AuthPayload,
-    AuthProfileResponse, AuthTokenResponse, GuestItem, GuestUpdateRequest, InstanceItem,
-    NatPortLeaseCreateRequest, NatPortLeaseItem, NodeCreateRequest, NodeItem, NodeUpdateRequest,
-    TicketItem, TicketReplyRequest, TicketStatusUpdateRequest,
+    AdminInstanceCreateRequest, AdminInstanceDeleteRequest, AdminPlanCreateRequest, AdminPlanItem,
+    AdminPlanUpdateRequest, AdminTicketCreateRequest, AuthPayload, AuthProfileResponse,
+    AuthTokenResponse, GuestItem, GuestUpdateRequest, InstanceItem, NatPortLeaseCreateRequest,
+    NatPortLeaseItem, NodeCreateRequest, NodeItem, NodeUpdateRequest, TicketItem,
+    TicketReplyRequest, TicketStatusUpdateRequest,
 };
 use reqwest::Client;
 
@@ -193,6 +194,47 @@ pub async fn get_instances(api_base: &str, token: &str) -> Result<Vec<InstanceIt
         .map_err(|e| format!("Failed to parse instances: {e}"))
 }
 
+pub async fn create_instance(
+    api_base: &str,
+    token: &str,
+    payload: &AdminInstanceCreateRequest,
+) -> Result<(), String> {
+    let client = Client::new();
+    let resp = client
+        .post(format!("{api_base}/api/admin/instances"))
+        .header("Authorization", &format!("Bearer {token}"))
+        .json(payload)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Create instance failed: {}", resp.status()));
+    }
+    Ok(())
+}
+
+pub async fn delete_instance(
+    api_base: &str,
+    token: &str,
+    instance_id: &str,
+    payload: &AdminInstanceDeleteRequest,
+) -> Result<(), String> {
+    let client = Client::new();
+    let resp = client
+        .delete(format!("{api_base}/api/admin/instances/{instance_id}"))
+        .header("Authorization", &format!("Bearer {token}"))
+        .json(payload)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Delete instance failed: {}", resp.status()));
+    }
+    Ok(())
+}
+
 pub async fn get_plans(api_base: &str, token: &str) -> Result<Vec<AdminPlanItem>, String> {
     let client = Client::new();
     let resp = client
@@ -254,10 +296,18 @@ pub async fn update_plan(
     Ok(())
 }
 
-pub async fn get_guests(api_base: &str, token: &str) -> Result<Vec<GuestItem>, String> {
+pub async fn get_guests(
+    api_base: &str,
+    token: &str,
+    search: Option<String>,
+) -> Result<Vec<GuestItem>, String> {
     let client = Client::new();
+    let mut url = format!("{api_base}/api/admin/guests");
+    if let Some(s) = search {
+        url = format!("{url}?search={}", urlencoding::encode(&s));
+    }
     let resp = client
-        .get(format!("{api_base}/api/admin/guests"))
+        .get(url)
         .header("Authorization", &format!("Bearer {token}"))
         .send()
         .await
@@ -311,6 +361,28 @@ pub async fn get_tickets(api_base: &str, token: &str) -> Result<Vec<TicketItem>,
         .map_err(|e| format!("Failed to parse tickets: {e}"))
 }
 
+pub async fn create_ticket(
+    api_base: &str,
+    token: &str,
+    payload: &AdminTicketCreateRequest,
+) -> Result<TicketItem, String> {
+    let client = Client::new();
+    let resp = client
+        .post(format!("{api_base}/api/admin/tickets"))
+        .header("Authorization", &format!("Bearer {token}"))
+        .json(payload)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Create failed: {}", resp.status()));
+    }
+    resp.json::<TicketItem>()
+        .await
+        .map_err(|e| format!("Failed to parse response: {e}"))
+}
+
 pub async fn update_ticket_status(
     api_base: &str,
     token: &str,
@@ -350,5 +422,50 @@ pub async fn reply_ticket(
     if !resp.status().is_success() {
         return Err(format!("Reply failed: {}", resp.status()));
     }
+    Ok(())
+}
+
+pub async fn get_ticket_messages(
+    api_base: &str,
+    token: &str,
+    ticket_id: &str,
+) -> Result<Vec<crate::models::TicketMessageItem>, String> {
+    let client = Client::new();
+    let url = format!("{api_base}/api/admin/tickets/{ticket_id}/messages");
+    let resp = client
+        .get(&url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .send()
+        .await
+        .map_err(|e| format!("load messages failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("load messages failed: {}", resp.status()));
+    }
+
+    resp.json::<Vec<crate::models::TicketMessageItem>>()
+        .await
+        .map_err(|e| format!("parse messages failed: {e}"))
+}
+
+pub async fn close_ticket(
+    api_base: &str,
+    token: &str,
+    ticket_id: &str,
+) -> Result<(), String> {
+    let client = Client::new();
+    let url = format!("{api_base}/api/admin/tickets/{ticket_id}/close");
+    let resp = client
+        .post(&url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .send()
+        .await
+        .map_err(|e| format!("close request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        let err_text = resp.text().await.unwrap_or_default();
+        return Err(format!("close failed: {err_text}"));
+    }
+
     Ok(())
 }

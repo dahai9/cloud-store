@@ -46,7 +46,7 @@ pub fn LoginPage() -> Element {
                             let plans = api::get_plans(&api_base_val, &auth.token)
                                 .await
                                 .unwrap_or_default();
-                            let guests = api::get_guests(&api_base_val, &auth.token)
+                            let guests = api::get_guests(&api_base_val, &auth.token, None)
                                 .await
                                 .unwrap_or_default();
                             let tickets = api::get_tickets(&api_base_val, &auth.token)

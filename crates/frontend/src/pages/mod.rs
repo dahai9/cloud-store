@@ -44,8 +44,11 @@ pub fn App() -> Element {
                     current.invoices = bundle.invoices;
                     current.tickets = bundle.tickets;
                     current.instances = bundle.instances;
+                    current.balance = bundle.balance;
+                    current.balance_transactions = bundle.balance_transactions;
                     current.loading = false;
                     current.error = None;
+
                 }
                 Err(err) => {
                     let mut current = session.write();

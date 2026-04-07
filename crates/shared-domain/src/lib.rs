@@ -50,6 +50,7 @@ pub enum TicketPriority {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum TicketCategory {
     Sales,
+    AfterSales,
     Billing,
     Network,
     Technical,
@@ -111,6 +112,7 @@ pub struct Instance {
     pub root_password: Option<String>,
     pub status: InstanceStatus,
     pub os_template: String,
+    pub auto_renew: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -185,4 +187,22 @@ pub fn validate_positive_amount(amount: Decimal) -> Result<(), DomainError> {
         return Err(DomainError::InvalidAmount);
     }
     Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum BalanceTransactionType {
+    Recharge,
+    Refund,
+    AutoRenew,
+    AdminAdjustment,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BalanceTransaction {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub amount: Decimal,
+    pub r#type: BalanceTransactionType,
+    pub description: String,
+    pub created_at: DateTime<Utc>,
 }

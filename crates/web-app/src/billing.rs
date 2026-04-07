@@ -103,6 +103,111 @@ async fn expire_overdue_invoices(state: &AppState) -> Result<(), (StatusCode, &'
     Ok(())
 }
 
+#[derive(Serialize)]
+pub struct UserBalanceInfo {
+    pub balance: String,
+}
+
+#[derive(Serialize)]
+pub struct BalanceTransactionItem {
+    pub id: String,
+    pub amount: String,
+    pub r#type: String,
+    pub description: String,
+    pub created_at: String,
+}
+
+pub async fn get_balance(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<UserBalanceInfo>, (StatusCode, &'static str)> {
+    let user = auth::require_user(&headers, &state).await?;
+
+    let balance = sqlx::query_scalar::<_, String>("SELECT CAST(balance AS TEXT) FROM users WHERE id = ?")
+        .bind(&user.id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|err| {
+            error!(error = %err, user_id = %user.id, "failed to query user balance");
+            (StatusCode::INTERNAL_SERVER_ERROR, "failed to load balance")
+        })?;
+
+    Ok(Json(UserBalanceInfo { balance }))
+}
+
+pub async fn list_balance_transactions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<BalanceTransactionItem>>, (StatusCode, &'static str)> {
+    let user = auth::require_user(&headers, &state).await?;
+
+    let rows = sqlx::query_as::<_, (String, String, String, String, String)>(
+        "SELECT id, CAST(amount AS TEXT), type, description, created_at FROM balance_transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT 100",
+    )
+    .bind(&user.id)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|err| {
+        error!(error = %err, user_id = %user.id, "failed to query balance transactions");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to load transactions")
+    })?;
+
+    let items = rows
+        .into_iter()
+        .map(|(id, amount, r#type, description, created_at)| BalanceTransactionItem {
+            id,
+            amount,
+            r#type,
+            description,
+            created_at,
+        })
+        .collect();
+
+    Ok(Json(items))
+}
+
+pub async fn recharge_balance(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<UserBalanceInfo>, (StatusCode, &'static str)> {
+    let user = auth::require_user(&headers, &state).await?;
+
+    // Mock recharge: add $100
+    let amount = 100.00;
+    let description = "Mock recharge (manual trigger)".to_string();
+    let tx_id = uuid::Uuid::new_v4().to_string();
+
+    let mut tx = state.db.begin().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
+
+    sqlx::query("UPDATE users SET balance = balance + ? WHERE id = ?")
+        .bind(amount)
+        .bind(&user.id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to update balance"))?;
+
+    sqlx::query(
+        "INSERT INTO balance_transactions (id, user_id, amount, type, description) VALUES (?, ?, ?, 'recharge', ?)"
+    )
+    .bind(&tx_id)
+    .bind(&user.id)
+    .bind(amount)
+    .bind(&description)
+    .execute(&mut *tx)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to create transaction"))?;
+
+    tx.commit().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to commit"))?;
+
+    let new_balance = sqlx::query_scalar::<_, String>("SELECT CAST(balance AS TEXT) FROM users WHERE id = ?")
+        .bind(&user.id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
+
+    Ok(Json(UserBalanceInfo { balance: new_balance }))
+}
+
 pub async fn list_invoices(
     State(state): State<AppState>,
     headers: HeaderMap,

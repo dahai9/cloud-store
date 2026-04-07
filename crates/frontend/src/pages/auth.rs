@@ -42,7 +42,11 @@ pub fn LoginPage(source: Option<String>, plan: Option<String>) -> Element {
                         s.profile = Some(bundle.profile);
                         s.invoices = bundle.invoices;
                         s.tickets = bundle.tickets;
+                        s.instances = bundle.instances;
+                        s.balance = bundle.balance;
+                        s.balance_transactions = bundle.balance_transactions;
                         s.loading = false;
+
                         s.error = None;
                     }
                     api::persist_authenticated_session(&state());
@@ -87,7 +91,11 @@ pub fn LoginPage(source: Option<String>, plan: Option<String>) -> Element {
                         s.profile = Some(bundle.profile);
                         s.invoices = bundle.invoices;
                         s.tickets = bundle.tickets;
+                        s.instances = bundle.instances;
+                        s.balance = bundle.balance;
+                        s.balance_transactions = bundle.balance_transactions;
                         s.loading = false;
+
                         s.error = None;
                     }
                     api::persist_authenticated_session(&state());

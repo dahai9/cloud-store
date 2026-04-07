@@ -38,7 +38,9 @@ async fn main() -> anyhow::Result<()> {
             error!(error = %e, "failed to sync instance statuses");
         }
 
-        run_renewal_tick().await;
+        if let Err(e) = run_renewal_tick(&db).await {
+            error!(error = %e, "failed to run renewal tick");
+        }
 
         tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
     }
@@ -285,8 +287,85 @@ async fn process_order(
     Ok(())
 }
 
-async fn run_renewal_tick() {
-    info!("renewal tick placeholder");
+async fn run_renewal_tick(db: &SqlitePool) -> anyhow::Result<()> {
+    // 1. Find active subscriptions that have auto_renew enabled and are expiring within 24 hours
+    let subscriptions = sqlx::query(
+        "SELECT s.id, s.user_id, s.order_id, s.current_period_end, i.id as instance_id, p.monthly_price, p.name as plan_name
+         FROM subscriptions s
+         JOIN instances i ON s.order_id = i.order_id
+         JOIN nat_plans p ON i.plan_id = p.id
+         WHERE s.status = 'active' AND i.auto_renew = 1 AND i.status != 'deleted'
+         AND datetime(s.current_period_end) <= datetime('now', '+1 day')
+         LIMIT 20"
+    )
+    .fetch_all(db)
+    .await?;
+
+    for sub in subscriptions {
+        let sub_id: String = sub.get("id");
+        let user_id: String = sub.get("user_id");
+        let instance_id: String = sub.get("instance_id");
+        let monthly_price: Decimal = sub.get::<String, _>("monthly_price").parse().unwrap_or(Decimal::ZERO);
+        let plan_name: String = sub.get("plan_name");
+        let current_end: String = sub.get("current_period_end");
+
+        // 2. Check user balance
+        let balance: Decimal = sqlx::query_scalar::<_, String>("SELECT CAST(balance AS TEXT) FROM users WHERE id = ?")
+            .bind(&user_id)
+            .fetch_one(db)
+            .await?
+            .parse()
+            .unwrap_or(Decimal::ZERO);
+
+        if balance >= monthly_price {
+            info!(instance_id = %instance_id, user_id = %user_id, "processing auto-renewal");
+
+            let mut tx = db.begin().await?;
+
+            // Deduct balance
+            sqlx::query("UPDATE users SET balance = balance - ? WHERE id = ?")
+                .bind(monthly_price.to_string())
+                .bind(&user_id)
+                .execute(&mut *tx)
+                .await?;
+
+            // Create transaction record
+            let tx_id = Uuid::new_v4().to_string();
+            let description = format!("Auto-renewal for {} ({})", plan_name, instance_id);
+            sqlx::query(
+                "INSERT INTO balance_transactions (id, user_id, amount, type, description) VALUES (?, ?, ?, 'auto_renew', ?)"
+            )
+            .bind(&tx_id)
+            .bind(&user_id)
+            .bind((-monthly_price).to_string())
+            .bind(&description)
+            .execute(&mut *tx)
+            .await?;
+
+            // Extend subscription
+            sqlx::query(
+                "UPDATE subscriptions SET current_period_start = current_period_end, 
+                 current_period_end = datetime(current_period_end, '+1 month'),
+                 updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?"
+            )
+            .bind(&sub_id)
+            .execute(&mut *tx)
+            .await?;
+
+            tx.commit().await?;
+            info!(instance_id = %instance_id, "auto-renewal successful, extended from {}", current_end);
+        } else {
+            warn!(instance_id = %instance_id, user_id = %user_id, "auto-renewal failed: insufficient balance");
+            // Optional: disable auto-renew or notify user
+            sqlx::query("UPDATE instances SET auto_renew = 0 WHERE id = ?")
+                .bind(&instance_id)
+                .execute(db)
+                .await?;
+        }
+    }
+
+    Ok(())
 }
 
 async fn expire_overdue_invoices(db: &SqlitePool) -> anyhow::Result<()> {

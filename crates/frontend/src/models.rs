@@ -87,13 +87,22 @@ pub struct InvoiceItem {
     pub paid_at: Option<String>,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, PartialEq)]
 pub struct TicketItem {
     pub id: String,
+    pub user_id: String,
     pub subject: String,
     pub category: String,
     pub priority: String,
     pub status: String,
+}
+
+#[derive(Clone, Deserialize, PartialEq)]
+pub struct TicketMessageItem {
+    pub id: String,
+    pub sender_user_id: Option<String>,
+    pub message: String,
+    pub created_at: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -119,6 +128,7 @@ pub struct InstanceItem {
     pub plan_id: String,
     pub status: String,
     pub os_template: String,
+    pub auto_renew: bool,
     pub root_password: Option<String>,
     pub created_at: String,
     pub nat_info: Vec<NatInfo>,
@@ -177,6 +187,33 @@ pub struct ConsoleToken {
     pub token: String,
 }
 
+#[derive(Clone, Deserialize)]
+pub struct UserBalanceInfo {
+    pub balance: String,
+}
+
+#[derive(Clone, Deserialize, PartialEq)]
+pub struct BalanceTransactionItem {
+    pub id: String,
+    pub amount: String,
+    pub r#type: String,
+    pub description: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Serialize)]
+pub struct CreateTicketRequest {
+    pub subject: String,
+    pub category: String,
+    pub priority: String,
+    pub message: String,
+}
+
+#[derive(Clone, Serialize)]
+pub struct UpdateAutoRenewRequest {
+    pub auto_renew: bool,
+}
+
 #[derive(Clone)]
 pub struct SessionState {
     pub api_base: String,
@@ -186,6 +223,8 @@ pub struct SessionState {
     pub invoices: Vec<InvoiceItem>,
     pub tickets: Vec<TicketItem>,
     pub instances: Vec<InstanceItem>,
+    pub balance: String,
+    pub balance_transactions: Vec<BalanceTransactionItem>,
     pub loading: bool,
     pub error: Option<String>,
 }
@@ -207,6 +246,8 @@ impl SessionState {
             invoices: vec![],
             tickets: vec![],
             instances: vec![],
+            balance: "0.00".to_string(),
+            balance_transactions: vec![],
             loading: false,
             error: None,
         }

@@ -200,9 +200,32 @@ fn build_guest_router(app_state: AppState) -> Router {
             post(payment::paypal::webhook),
         )
         .route("/api/tickets", get(tickets::list_tickets))
+        .route("/api/tickets", post(tickets::create_ticket))
+        .route(
+            "/api/tickets/{ticket_id}/messages",
+            get(tickets::list_ticket_messages),
+        )
+        .route(
+            "/api/tickets/{ticket_id}/reply",
+            post(tickets::reply_ticket),
+        )
+        .route(
+            "/api/tickets/{ticket_id}/close",
+            post(tickets::close_ticket),
+        )
+        .route("/api/user/balance", get(billing::get_balance))
+        .route(
+            "/api/user/balance/transactions",
+            get(billing::list_balance_transactions),
+        )
+        .route("/api/user/balance/recharge", post(billing::recharge_balance))
         .route("/api/invoices", get(billing::list_invoices))
         .route("/api/instances", get(instances::list_instances))
         .route("/api/instances/{id}", get(instances::get_instance))
+        .route(
+            "/api/instances/{id}/auto-renew",
+            patch(instances::update_auto_renew),
+        )
         .route(
             "/api/instances/{id}/nat-mappings",
             get(instances::list_nat_mappings),
@@ -248,12 +271,18 @@ fn build_admin_router(app_state: AppState) -> Router {
             delete(admin::delete_nat_port_lease),
         )
         .route("/api/admin/instances", get(admin::list_instances))
+        .route("/api/admin/instances", post(admin::admin_add_instance))
+        .route(
+            "/api/admin/instances/{instance_id}",
+            delete(admin::admin_delete_instance),
+        )
         .route("/api/admin/plans", get(admin::list_plans))
         .route("/api/admin/plans", post(admin::add_plan))
         .route("/api/admin/plans/{plan_id}", patch(admin::update_plan))
         .route("/api/admin/guests", get(admin::list_guests))
         .route("/api/admin/guests/{user_id}", patch(admin::update_guest))
         .route("/api/admin/tickets", get(tickets::list_tickets))
+        .route("/api/admin/tickets", post(admin::admin_create_ticket))
         .route(
             "/api/admin/tickets/{ticket_id}/status",
             patch(tickets::admin_update_ticket_status),
@@ -265,6 +294,10 @@ fn build_admin_router(app_state: AppState) -> Router {
         .route(
             "/api/admin/tickets/{ticket_id}/reply",
             post(tickets::admin_reply_ticket),
+        )
+        .route(
+            "/api/admin/tickets/{ticket_id}/close",
+            post(tickets::admin_close_ticket),
         )
         .route("/api/admin/invoices", get(billing::list_invoices))
         .layer(cors_layer())

@@ -31,6 +31,13 @@ pub fn InstancesPage() -> Element {
             h2 { "全平台实例概览" }
             div { class: "actions",
                 button {
+                    class: "btn-primary",
+                    onclick: move |_| {
+                        session.write().notice = Some("手动添加实例功能已在 API 层面实现，请使用 API 工具或完善 UI 呼叫 /api/admin/instances".to_string());
+                    },
+                    "添加实例"
+                }
+                button {
                     class: "btn-secondary",
                     onclick: refresh_instances,
                     "刷新列表"
@@ -55,6 +62,7 @@ pub fn InstancesPage() -> Element {
                                 th { "状态" }
                                 th { "镜像" }
                                 th { "创建时间" }
+                                th { "操作" }
                             }
                         }
                         tbody {
@@ -69,6 +77,40 @@ pub fn InstancesPage() -> Element {
                                     }
                                     td { "{inst.os_template}" }
                                     td { "{inst.created_at}" }
+                                    td {
+                                        button {
+                                            class: "btn-secondary btn-sm",
+                                            onclick: {
+                                                let id = inst.id.clone();
+                                                let api_base = session().api_base.clone();
+                                                let token = session().token.clone().unwrap_or_default();
+                                                move |_| {
+                                                    let id = id.clone();
+                                                    let api_base = api_base.clone();
+                                                    let token = token.clone();
+                                                    spawn(async move {
+                                                        // Simple prompt for refund
+                                                        let refund = "0.00".to_string(); // In real app we would use a modal
+                                                        let payload = crate::models::AdminInstanceDeleteRequest {
+                                                            refund_amount: Some(refund),
+                                                        };
+                                                        session.write().loading = true;
+                                                        match api::delete_instance(&api_base, &token, &id, &payload).await {
+                                                            Ok(_) => {
+                                                                session.write().notice = Some("实例已删除".to_string());
+                                                                if let Ok(instances) = api::get_instances(&api_base, &token).await {
+                                                                    session.write().instances = instances;
+                                                                }
+                                                            }
+                                                            Err(e) => session.write().error = Some(e),
+                                                        }
+                                                        session.write().loading = false;
+                                                    });
+                                                }
+                                            },
+                                            "删除"
+                                        }
+                                    }
                                 }
                             }
                         }

@@ -384,6 +384,30 @@ pub fn InstanceDetailPage(id: String) -> Element {
                             span { class: "muted", "Created At" }
                             span { class: "fact", "{inst.created_at}" }
                         }
+                        div { class: "detail-item",
+                            span { class: "muted", "Auto Renew" }
+                            button {
+                                class: if inst.auto_renew { "btn-success btn-sm" } else { "btn-secondary btn-sm" },
+                                onclick: {
+                                    let id = inst.id.clone();
+                                    let api_base = api_base.clone();
+                                    let token = token.clone();
+                                    let next = !inst.auto_renew;
+                                    move |_| {
+                                        let id = id.clone();
+                                        let api_base = api_base.clone();
+                                        let token = token.clone();
+                                        spawn(async move {
+                                            match api::update_auto_renew(&api_base, &token, &id, next).await {
+                                                Ok(updated) => instance.set(Some(updated)),
+                                                Err(e) => error.set(Some(e)),
+                                            }
+                                        });
+                                    }
+                                },
+                                if inst.auto_renew { "Enabled" } else { "Disabled" }
+                            }
+                        }
                     }
                 }
 
@@ -603,8 +627,11 @@ pub fn InstanceDetailPage(id: String) -> Element {
 
 #[component]
 pub fn TicketsPage() -> Element {
-    let session = use_context::<Signal<SessionState>>();
+    let mut session = use_context::<Signal<SessionState>>();
     let state = session();
+    let mut show_create_form = use_signal(|| false);
+    let mut selected_ticket_id = use_signal(|| None::<String>);
+    let mut ticket_messages = use_signal(Vec::<crate::models::TicketMessageItem>::new);
 
     if state.token.is_none() {
         return rsx! {
@@ -612,35 +639,301 @@ pub fn TicketsPage() -> Element {
         };
     }
 
-    rsx! {
-        DashboardShell { title: "Ticket Center", active_tab: DashboardTab::Tickets,
-            section { class: "panel",
-                h3 { "Recent Tickets" }
-                table {
-                    thead {
-                        tr {
-                            th { "ID" }
-                            th { "Title" }
-                            th { "Category" }
-                            th { "Priority" }
-                            th { "Status" }
+    let api_base = state.api_base.clone();
+    let token = state.token.clone().unwrap();
+
+    let on_create_ticket = {
+        let api_base = api_base.clone();
+        let token = token.clone();
+        move |_| {
+            #[cfg(target_arch = "wasm32")]
+            {
+                use wasm_bindgen::JsCast;
+                use web_sys::HtmlInputElement;
+                use web_sys::HtmlSelectElement;
+                use web_sys::HtmlTextAreaElement;
+                let window = web_sys::window().unwrap();
+                let document = window.document().unwrap();
+                let subject = document.get_element_by_id("ticket_subject").unwrap().dyn_into::<HtmlInputElement>().unwrap().value();
+                let category = document.get_element_by_id("ticket_category").unwrap().dyn_into::<HtmlSelectElement>().unwrap().value();
+                let priority = document.get_element_by_id("ticket_priority").unwrap().dyn_into::<HtmlSelectElement>().unwrap().value();
+                let message = document.get_element_by_id("ticket_message").unwrap().dyn_into::<HtmlTextAreaElement>().unwrap().value();
+
+                if !subject.is_empty() && !message.is_empty() {
+                    let api_base = api_base.clone();
+                    let token = token.clone();
+                    let payload = crate::models::CreateTicketRequest {
+                        subject,
+                        category,
+                        priority,
+                        message,
+                    };
+                    spawn(async move {
+                        session.write().loading = true;
+                        match api::create_ticket(&api_base, &token, &payload).await {
+                            Ok(_) => {
+                                show_create_form.set(false);
+                                if let Ok(bundle) = api::load_authenticated_bundle(&api_base, &token).await {
+                                    let mut s = session.write();
+                                    s.tickets = bundle.tickets;
+                                    s.loading = false;
+                                } else {
+                                    session.write().loading = false;
+                                }
+                            }
+                            Err(e) => {
+                                let mut s = session.write();
+                                s.error = Some(e);
+                                s.loading = false;
+                            }
+                        }
+                    });
+                }
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let _ = (&api_base, &token);
+            }
+        }
+    };
+
+    let on_reply_ticket = {
+        let api_base = api_base.clone();
+        let token = token.clone();
+        move |_| {
+            #[cfg(target_arch = "wasm32")]
+            {
+                use wasm_bindgen::JsCast;
+                use web_sys::HtmlTextAreaElement;
+                let window = web_sys::window().unwrap();
+                let document = window.document().unwrap();
+                let message = document.get_element_by_id("reply_message").unwrap().dyn_into::<HtmlTextAreaElement>().unwrap().value();
+                let ticket_id = selected_ticket_id().unwrap();
+
+                if !message.trim().is_empty() {
+                    let api_base = api_base.clone();
+                    let token = token.clone();
+                    spawn(async move {
+                        match api::reply_ticket(&api_base, &token, &ticket_id, &message).await {
+                            Ok(_) => {
+                                if let Ok(msgs) = api::fetch_ticket_messages(&api_base, &token, &ticket_id).await {
+                                    ticket_messages.set(msgs);
+                                }
+                            }
+                            Err(e) => {
+                                session.write().error = Some(e);
+                            }
+                        }
+                    });
+                }
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let _ = (&api_base, &token);
+            }
+        }
+    };
+
+    let on_close_ticket = {
+        let api_base = api_base.clone();
+        let token = token.clone();
+        move |_| {
+            let api_base = api_base.clone();
+            let token = token.clone();
+            let ticket_id = selected_ticket_id().unwrap();
+            spawn(async move {
+                match api::close_ticket(&api_base, &token, &ticket_id).await {
+                    Ok(_) => {
+                        if let Ok(bundle) = api::load_authenticated_bundle(&api_base, &token).await {
+                            let mut s = session.write();
+                            s.tickets = bundle.tickets;
                         }
                     }
-                    tbody {
-                        if state.tickets.is_empty() {
-                            tr {
-                                td { colspan: "5", "No tickets found" }
+                    Err(e) => {
+                        let mut s = session.write();
+                        s.error = Some(e);
+                    }
+                }
+            });
+        }
+    };
+
+    let selected_ticket = selected_ticket_id().and_then(|id| state.tickets.iter().find(|t| t.id == id));
+
+    rsx! {
+        DashboardShell { title: "Ticket Center", active_tab: DashboardTab::Tickets,
+            if let Some(ticket) = selected_ticket {
+                section { class: "panel",
+                    div { class: "flex-row-between",
+                        h3 { "{ticket.subject}" }
+                        div { class: "flex-row", style: "gap: 10px;",
+                            if ticket.status.to_lowercase() != "closed" {
+                                button {
+                                    class: "btn-secondary",
+                                    onclick: on_close_ticket,
+                                    "Close Ticket"
+                                }
                             }
-                        } else {
-                            for item in &state.tickets {
+                            button {
+                                class: "btn-secondary",
+                                onclick: move |_| selected_ticket_id.set(None),
+                                "Back to List"
+                            }
+                        }
+                    }
+                    div { class: "meta-strip",
+                        span { class: "meta-item", "Category: {ticket.category}" }
+                        span { class: "meta-item", "Priority: {ticket.priority}" }
+                        span { class: "meta-item", "Status: {ticket.status}" }
+                    }
+
+                    div { class: "message-list", style: "margin: 20px 0; max-height: 400px; overflow-y: auto; padding: 10px; background: #f9f9f9; border-radius: 8px;",
+                        for msg in ticket_messages() {
+                            div {
+                                class: if msg.sender_user_id.as_deref() == Some(ticket.user_id.as_str()) { "message own" } else { "message other" },
+                                style: if msg.sender_user_id.as_deref() == Some(ticket.user_id.as_str()) { "text-align: right; margin-bottom: 15px;" } else { "text-align: left; margin-bottom: 15px;" },
+                                div {
+                                    style: format!("display: inline-block; padding: 10px 15px; border-radius: 12px; max-width: 80%; {}",
+                                        if msg.sender_user_id.as_deref() == Some(ticket.user_id.as_str()) { "background: #e3f2fd; border: 1px solid #bbdefb;" } else { "background: white; border: 1px solid #eee;" }
+                                    ),
+                                    p { style: "margin: 0;", "{msg.message}" }
+                                    p { class: "muted x-small", style: "margin-top: 5px;",
+                                        "{msg.created_at} "
+                                        if msg.sender_user_id.as_deref() == Some(ticket.user_id.as_str()) { "(我)" } else { "(客服)" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    div { class: "reply-form",
+                        textarea {
+                            id: "reply_message",
+                            rows: "3",
+                            placeholder: "Type your reply..."
+                        }
+                        button {
+                            class: "btn-primary",
+                            onclick: on_reply_ticket,
+                            "Send Reply"
+                        }
+                    }
+                }
+            } else {
+                section { class: "panel",
+                    div { class: "flex-row-between",
+                        h3 { "Recent Tickets" }
+                        button {
+                            class: "btn-primary",
+                            onclick: move |_| show_create_form.set(!show_create_form()),
+                            if show_create_form() { "Cancel" } else { "Create Ticket" }
+                        }
+                    }
+
+                    if show_create_form() {
+                        div { class: "add-mapping-form", style: "margin-top: 20px; border-top: 1px solid #eee; padding-top: 20px;",
+                            h4 { "New Support Ticket" }
+                            div { class: "form-group",
+                                label { "Subject" }
+                                input {
+                                    r#type: "text",
+                                    id: "ticket_subject",
+                                    placeholder: "Brief description of the issue"
+                                }
+                            }
+                            div { class: "form-row",
+                                div { class: "form-group",
+                                    label { "Category" }
+                                    select { id: "ticket_category",
+                                        option { value: "Technical", "Technical" }
+                                        option { value: "Billing", "Billing" }
+                                        option { value: "AfterSales", "After-Sales" }
+                                        option { value: "Network", "Network" }
+                                        option { value: "Abuse", "Abuse" }
+                                        option { value: "Other", "Other" }
+                                    }
+                                }
+                                div { class: "form-group",
+                                    label { "Priority" }
+                                    select { id: "ticket_priority",
+                                        option { value: "Low", "Low" }
+                                        option { value: "Medium", "Medium" }
+                                        option { value: "High", "High" }
+                                        option { value: "Urgent", "Urgent" }
+                                    }
+                                }
+                            }
+                            div { class: "form-group",
+                                label { "Message" }
+                                textarea {
+                                    id: "ticket_message",
+                                    rows: "5",
+                                    placeholder: "Please provide details about your request..."
+                                }
+                            }
+                            button {
+                                class: "btn-primary",
+                                onclick: on_create_ticket,
+                                "Submit Ticket"
+                            }
+                        }
+                    }
+
+                    table {
+                        thead {
+                            tr {
+                                th { "ID" }
+                                th { "Title" }
+                                th { "Category" }
+                                th { "Priority" }
+                                th { "Status" }
+                                th { "Action" }
+                            }
+                        }
+                        tbody {
+                            if state.tickets.is_empty() {
                                 tr {
-                                    td { "{item.id}" }
-                                    td { "{item.subject}" }
-                                    td { "{item.category}" }
-                                    td { "{item.priority}" }
-                                    td {
-                                        span { class: if item.status.eq_ignore_ascii_case("open") { "pill pending" } else { "pill paid" },
-                                            "{item.status}"
+                                    td { colspan: "6", "No tickets found" }
+                                }
+                            } else {
+                                for item in &state.tickets {
+                                    tr {
+                                        td { "{item.id}" }
+                                        td { "{item.subject}" }
+                                        td { "{item.category}" }
+                                        td { "{item.priority}" }
+                                        td {
+                                            span { class: if item.status.eq_ignore_ascii_case("open") { "pill pending" } else { "pill paid" },
+                                                "{item.status}"
+                                            }
+                                        }
+                                        td {
+                                            button {
+                                                class: "btn-secondary btn-sm",
+                                                onclick: {
+                                                    let id = item.id.clone();
+                                                    let api_base = api_base.clone();
+                                                    let token = token.clone();
+                                                    move |_| {
+                                                        let id_val = id.clone();
+                                                        let api_base = api_base.clone();
+                                                        let token = token.clone();
+                                                        spawn(async move {
+                                                            match api::fetch_ticket_messages(&api_base, &token, &id_val).await {
+                                                                Ok(msgs) => {
+                                                                    ticket_messages.set(msgs);
+                                                                    selected_ticket_id.set(Some(id_val));
+                                                                }
+                                                                Err(e) => {
+                                                                    let mut s = session.write();
+                                                                    s.error = Some(e);
+                                                                }
+                                                            }
+                                                        });
+                                                    }
+                                                },
+                                                "Details"
+                                            }
                                         }
                                     }
                                 }
@@ -655,7 +948,7 @@ pub fn TicketsPage() -> Element {
 
 #[component]
 pub fn BalancePage() -> Element {
-    let session = use_context::<Signal<SessionState>>();
+    let mut session = use_context::<Signal<SessionState>>();
     let state = session();
     let mut selected_invoice_id = use_signal(|| None::<String>);
     let mut modal_closing = use_signal(|| false);
@@ -684,12 +977,28 @@ pub fn BalancePage() -> Element {
         })
         .collect();
 
-    let balance_value = invoices
-        .iter()
-        .filter_map(|item| item.amount.parse::<f64>().ok())
-        .sum::<f64>();
-    let amount_text = format!("$ {balance_value:.2}");
+    let balance_text = format!("$ {}", state.balance);
     let now = Utc::now();
+
+    let on_recharge = move |_| {
+        let api_base = session.peek().api_base.clone();
+        let token = session.peek().token.clone().unwrap_or_default();
+        spawn(async move {
+            session.write().loading = true;
+            match api::recharge_balance(&api_base, &token).await {
+                Ok(new_balance) => {
+                    session.write().balance = new_balance;
+                    if let Ok(bundle) = api::load_authenticated_bundle(&api_base, &token).await {
+                        let mut s = session.write();
+                        s.balance = bundle.balance;
+                        s.balance_transactions = bundle.balance_transactions;
+                    }
+                }
+                Err(e) => session.write().error = Some(e),
+            }
+            session.write().loading = false;
+        });
+    };
 
     let selected_order_id = selected_invoice
         .as_ref()
@@ -773,11 +1082,56 @@ pub fn BalancePage() -> Element {
     rsx! {
         DashboardShell { title: "Balance & Finance", active_tab: DashboardTab::Balance,
             section { class: "balance-card",
-                p { class: "muted", "Invoice Total" }
-                div { class: "amount", "{amount_text}" }
+                div {
+                    p { class: "muted", "Available Balance" }
+                    div { class: "amount", "{balance_text}" }
+                }
+                button {
+                    class: "btn-primary",
+                    onclick: on_recharge,
+                    "Recharge $100 (Mock)"
+                }
             }
 
             section { class: "balance-layout",
+                article { class: "table-card",
+                    div { class: "tab-strip",
+                        button { class: "tab active", "Transaction History" }
+                    }
+
+                    table {
+                        thead {
+                            tr {
+                                th { "Date" }
+                                th { "Type" }
+                                th { "Amount" }
+                                th { "Description" }
+                            }
+                        }
+                        tbody {
+                            if state.balance_transactions.is_empty() {
+                                tr {
+                                    td { colspan: "4", "No transactions found" }
+                                }
+                            } else {
+                                for tx in &state.balance_transactions {
+                                    tr {
+                                        td { "{tx.created_at}" }
+                                        td { "{tx.r#type}" }
+                                        td {
+                                            span {
+                                                class: if tx.amount.starts_with('-') { "text-danger" } else { "text-success" },
+                                                "{tx.amount}"
+                                            }
+                                        }
+                                        td { "{tx.description}" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 article { class: "table-card",
                     div { class: "tab-strip",
                         button { class: "tab active", "Invoice Records" }

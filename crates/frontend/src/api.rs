@@ -158,6 +158,8 @@ pub async fn authenticate_and_load(
     let invoices = fetch_invoices(api_base, &token).await?;
     let tickets = fetch_tickets(api_base, &token).await?;
     let instances = fetch_instances(api_base, &token).await?;
+    let balance = fetch_balance(api_base, &token).await?;
+    let balance_transactions = fetch_balance_transactions(api_base, &token).await?;
 
     Ok(BootstrapBundle {
         token,
@@ -165,6 +167,8 @@ pub async fn authenticate_and_load(
         invoices,
         tickets,
         instances,
+        balance,
+        balance_transactions,
     })
 }
 
@@ -201,6 +205,8 @@ pub async fn load_authenticated_bundle(
     let invoices = fetch_invoices(api_base, token).await?;
     let tickets = fetch_tickets(api_base, token).await?;
     let instances = fetch_instances(api_base, token).await?;
+    let balance = fetch_balance(api_base, token).await?;
+    let balance_transactions = fetch_balance_transactions(api_base, token).await?;
 
     Ok(BootstrapBundle {
         token: token.to_string(),
@@ -208,6 +214,8 @@ pub async fn load_authenticated_bundle(
         invoices,
         tickets,
         instances,
+        balance,
+        balance_transactions,
     })
 }
 
@@ -290,6 +298,100 @@ pub async fn retry_paypal_invoice(
         .map_err(|e| format!("failed to parse retry response: {e}"))
 }
 
+pub async fn fetch_balance(api_base: &str, token: &str) -> Result<String, String> {
+    let client = Client::new();
+    let url = format!("{api_base}/api/user/balance");
+    let resp = client
+        .get(&url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .send()
+        .await
+        .map_err(|e| format!("failed to load balance: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("balance request failed: {}", resp.status()));
+    }
+
+    let result = resp
+        .json::<crate::models::UserBalanceInfo>()
+        .await
+        .map_err(|e| format!("failed to parse balance: {e}"))?;
+    Ok(result.balance)
+}
+
+pub async fn fetch_balance_transactions(
+    api_base: &str,
+    token: &str,
+) -> Result<Vec<crate::models::BalanceTransactionItem>, String> {
+    let client = Client::new();
+    let url = format!("{api_base}/api/user/balance/transactions");
+    let resp = client
+        .get(&url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .send()
+        .await
+        .map_err(|e| format!("failed to load balance transactions: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!(
+            "balance transactions request failed: {}",
+            resp.status()
+        ));
+    }
+
+    resp.json::<Vec<crate::models::BalanceTransactionItem>>()
+        .await
+        .map_err(|e| format!("failed to parse balance transactions: {e}"))
+}
+
+pub async fn recharge_balance(api_base: &str, token: &str) -> Result<String, String> {
+    let client = Client::new();
+    let url = format!("{api_base}/api/user/balance/recharge");
+    let resp = client
+        .post(&url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .send()
+        .await
+        .map_err(|e| format!("recharge request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("recharge failed: {}", resp.status()));
+    }
+
+    let result = resp
+        .json::<crate::models::UserBalanceInfo>()
+        .await
+        .map_err(|e| format!("failed to parse balance: {e}"))?;
+    Ok(result.balance)
+}
+
+pub async fn update_auto_renew(
+    api_base: &str,
+    token: &str,
+    instance_id: &str,
+    auto_renew: bool,
+) -> Result<InstanceItem, String> {
+    let client = Client::new();
+    let url = format!("{api_base}/api/instances/{instance_id}/auto-renew");
+    let payload = crate::models::UpdateAutoRenewRequest { auto_renew };
+
+    let resp = client
+        .patch(&url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("auto-renew update request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("auto-renew update failed: {}", resp.status()));
+    }
+
+    resp.json::<InstanceItem>()
+        .await
+        .map_err(|e| format!("failed to parse instance response: {e}"))
+}
+
 async fn fetch_profile(api_base: &str, token: &str) -> Result<AuthProfileResponse, String> {
     let client = Client::new();
     let url = format!("{api_base}/api/auth/me");
@@ -354,6 +456,104 @@ async fn fetch_tickets(api_base: &str, token: &str) -> Result<Vec<TicketItem>, S
     resp.json::<Vec<TicketItem>>()
         .await
         .map_err(|e| format!("failed to parse tickets response: {e}"))
+}
+
+pub async fn create_ticket(
+    api_base: &str,
+    token: &str,
+    payload: &crate::models::CreateTicketRequest,
+) -> Result<TicketItem, String> {
+    let client = Client::new();
+    let url = format!("{api_base}/api/tickets");
+    let resp = client
+        .post(&url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .json(payload)
+        .send()
+        .await
+        .map_err(|e| format!("failed to create ticket: {e}"))?;
+
+    if !resp.status().is_success() {
+        let err_text = resp.text().await.unwrap_or_default();
+        return Err(format!("create ticket failed: {err_text}"));
+    }
+
+    resp.json::<TicketItem>()
+        .await
+        .map_err(|e| format!("failed to parse created ticket: {e}"))
+}
+
+pub async fn fetch_ticket_messages(
+    api_base: &str,
+    token: &str,
+    ticket_id: &str,
+) -> Result<Vec<crate::models::TicketMessageItem>, String> {
+    let client = Client::new();
+    let url = format!("{api_base}/api/tickets/{ticket_id}/messages");
+    let resp = client
+        .get(&url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .send()
+        .await
+        .map_err(|e| format!("failed to load ticket messages: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("messages request failed: {}", resp.status()));
+    }
+
+    resp.json::<Vec<crate::models::TicketMessageItem>>()
+        .await
+        .map_err(|e| format!("failed to parse messages: {e}"))
+}
+
+pub async fn reply_ticket(
+    api_base: &str,
+    token: &str,
+    ticket_id: &str,
+    message: &str,
+) -> Result<crate::models::TicketMessageItem, String> {
+    let client = Client::new();
+    let url = format!("{api_base}/api/tickets/{ticket_id}/reply");
+    let payload = serde_json::json!({ "message": message });
+
+    let resp = client
+        .post(&url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("reply request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        let err_text = resp.text().await.unwrap_or_default();
+        return Err(format!("reply failed: {err_text}"));
+    }
+
+    resp.json::<crate::models::TicketMessageItem>()
+        .await
+        .map_err(|e| format!("failed to parse message: {e}"))
+}
+
+pub async fn close_ticket(
+    api_base: &str,
+    token: &str,
+    ticket_id: &str,
+) -> Result<(), String> {
+    let client = Client::new();
+    let url = format!("{api_base}/api/tickets/{ticket_id}/close");
+    let resp = client
+        .post(&url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .send()
+        .await
+        .map_err(|e| format!("close request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        let err_text = resp.text().await.unwrap_or_default();
+        return Err(format!("close failed: {err_text}"));
+    }
+
+    Ok(())
 }
 
 pub async fn fetch_instances(api_base: &str, token: &str) -> Result<Vec<InstanceItem>, String> {
@@ -564,4 +764,6 @@ pub struct BootstrapBundle {
     pub invoices: Vec<InvoiceItem>,
     pub tickets: Vec<TicketItem>,
     pub instances: Vec<InstanceItem>,
+    pub balance: String,
+    pub balance_transactions: Vec<crate::models::BalanceTransactionItem>,
 }

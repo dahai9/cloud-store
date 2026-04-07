@@ -165,6 +165,7 @@ pub struct AdminPlanUpdateRequest {
 pub struct GuestItem {
     pub id: String,
     pub email: String,
+    pub balance: String,
     pub disabled: bool,
     pub created_at: String,
 }
@@ -174,14 +175,45 @@ pub struct GuestUpdateRequest {
     pub disabled: bool,
 }
 
+#[derive(Clone, Serialize)]
+pub struct AdminInstanceCreateRequest {
+    pub user_id: String,
+    pub plan_id: String,
+    pub node_id: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct AdminInstanceDeleteRequest {
+    pub refund_amount: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct AdminTicketCreateRequest {
+    pub user_id: String,
+    pub category: String,
+    pub priority: String,
+    pub subject: String,
+    pub message: String,
+}
+
 #[derive(Clone, Deserialize, PartialEq)]
 pub struct TicketItem {
     pub id: String,
+    pub user_id: String,
     pub subject: String,
     pub category: String,
     pub priority: String,
     pub status: String,
 }
+
+#[derive(Clone, Deserialize, PartialEq)]
+pub struct TicketMessageItem {
+    pub id: String,
+    pub sender_user_id: Option<String>,
+    pub message: String,
+    pub created_at: String,
+}
+
 
 #[derive(Clone, Serialize)]
 pub struct TicketStatusUpdateRequest {

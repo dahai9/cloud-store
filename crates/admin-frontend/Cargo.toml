@@ -9,3 +9,4 @@ dioxus = { workspace = true, features = ["router", "web"] }
 reqwest = { workspace = true }
 serde.workspace = true
 serde_json.workspace = true
+urlencoding = "2"

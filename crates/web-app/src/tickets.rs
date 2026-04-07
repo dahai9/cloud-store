@@ -13,6 +13,7 @@ use uuid::Uuid;
 #[derive(Serialize)]
 pub struct TicketItem {
     pub id: String,
+    pub user_id: String,
     pub subject: String,
     pub category: String,
     pub priority: String,
@@ -37,6 +38,77 @@ pub struct TicketReplyRequest {
     pub message: String,
 }
 
+#[derive(Deserialize)]
+pub struct CreateTicketRequest {
+    pub subject: String,
+    pub category: String,
+    pub priority: String,
+    pub message: String,
+}
+
+pub async fn create_ticket(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateTicketRequest>,
+) -> Result<Json<TicketItem>, (StatusCode, &'static str)> {
+    let user = auth::require_user(&headers, &state).await?;
+
+    if payload.subject.trim().is_empty() || payload.message.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "subject and message are required"));
+    }
+
+    let ticket_id = Uuid::new_v4().to_string();
+    let message_id = Uuid::new_v4().to_string();
+
+    let mut tx = state
+        .db
+        .begin()
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
+
+    sqlx::query(
+        "INSERT INTO support_tickets (id, user_id, category, priority, subject, status) VALUES (?, ?, ?, ?, ?, 'open')",
+    )
+    .bind(&ticket_id)
+    .bind(&user.id)
+    .bind(payload.category.trim())
+    .bind(payload.priority.trim())
+    .bind(payload.subject.trim())
+    .execute(&mut *tx)
+    .await
+    .map_err(|err| {
+        error!(error = %err, user_id = %user.id, "failed to create support ticket");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to create ticket")
+    })?;
+
+    sqlx::query(
+        "INSERT INTO support_messages (id, ticket_id, sender_user_id, message) VALUES (?, ?, ?, ?)",
+    )
+    .bind(&message_id)
+    .bind(&ticket_id)
+    .bind(&user.id)
+    .bind(payload.message.trim())
+    .execute(&mut *tx)
+    .await
+    .map_err(|err| {
+        error!(error = %err, ticket_id = %ticket_id, user_id = %user.id, "failed to create initial ticket message");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to create ticket")
+    })?;
+
+    tx.commit()
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to commit transaction"))?;
+
+    Ok(Json(TicketItem {
+        id: ticket_id,
+        user_id: user.id,
+        subject: payload.subject,
+        category: payload.category,
+        priority: payload.priority,
+        status: "open".to_string(),
+    }))
+}
+
 pub async fn list_tickets(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -44,8 +116,8 @@ pub async fn list_tickets(
     let user = auth::require_auth(&headers, &state).await?;
 
     let records = if user.role == "admin" {
-        sqlx::query_as::<_, (String, String, String, String, String)>(
-            "SELECT id, subject, category, priority, status FROM support_tickets ORDER BY created_at DESC LIMIT 50",
+        sqlx::query_as::<_, (String, String, String, String, String, String)>(
+            "SELECT id, user_id, subject, category, priority, status FROM support_tickets ORDER BY updated_at DESC LIMIT 50",
         )
         .fetch_all(&state.db)
         .await
@@ -57,8 +129,8 @@ pub async fn list_tickets(
             )
         })?
     } else {
-        sqlx::query_as::<_, (String, String, String, String, String)>(
-            "SELECT id, subject, category, priority, status FROM support_tickets WHERE user_id = ? ORDER BY created_at DESC LIMIT 50",
+        sqlx::query_as::<_, (String, String, String, String, String, String)>(
+            "SELECT id, user_id, subject, category, priority, status FROM support_tickets WHERE user_id = ? ORDER BY updated_at DESC LIMIT 50",
         )
         .bind(&user.id)
         .fetch_all(&state.db)
@@ -74,8 +146,9 @@ pub async fn list_tickets(
 
     let items = records
         .into_iter()
-        .map(|(id, subject, category, priority, status)| TicketItem {
+        .map(|(id, user_id, subject, category, priority, status)| TicketItem {
             id,
+            user_id,
             subject,
             category,
             priority,
@@ -84,6 +157,123 @@ pub async fn list_tickets(
         .collect();
 
     Ok(Json(items))
+}
+
+pub async fn list_ticket_messages(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(ticket_id): Path<String>,
+) -> Result<Json<Vec<TicketMessageItem>>, (StatusCode, &'static str)> {
+    let user = auth::require_user(&headers, &state).await?;
+
+    let ticket_owner_id = sqlx::query_scalar::<_, String>(
+        "SELECT user_id FROM support_tickets WHERE id = ?"
+    )
+    .bind(&ticket_id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?
+    .ok_or((StatusCode::NOT_FOUND, "ticket not found"))?;
+
+    if ticket_owner_id != user.id {
+        return Err((StatusCode::FORBIDDEN, "access denied"));
+    }
+
+    let rows = sqlx::query_as::<_, (String, Option<String>, String, String)>(
+        "SELECT id, sender_user_id, message, created_at FROM support_messages WHERE ticket_id = ? ORDER BY created_at ASC",
+    )
+    .bind(&ticket_id)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|err| {
+        error!(error = %err, ticket_id = %ticket_id, "failed to query support messages");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to load ticket messages",
+        )
+    })?;
+
+    let items = rows
+        .into_iter()
+        .map(
+            |(id, sender_user_id, message, created_at)| TicketMessageItem {
+                id,
+                sender_user_id,
+                message,
+                created_at,
+            },
+        )
+        .collect();
+
+    Ok(Json(items))
+}
+
+pub async fn reply_ticket(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(ticket_id): Path<String>,
+    Json(payload): Json<TicketReplyRequest>,
+) -> Result<Json<TicketMessageItem>, (StatusCode, &'static str)> {
+    let user = auth::require_user(&headers, &state).await?;
+
+    if payload.message.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "message is required"));
+    }
+
+    let ticket_owner_id = sqlx::query_scalar::<_, String>(
+        "SELECT user_id FROM support_tickets WHERE id = ?"
+    )
+    .bind(&ticket_id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?
+    .ok_or((StatusCode::NOT_FOUND, "ticket not found"))?;
+
+    if ticket_owner_id != user.id {
+        return Err((StatusCode::FORBIDDEN, "access denied"));
+    }
+
+    let message_id = Uuid::new_v4().to_string();
+    sqlx::query(
+        "INSERT INTO support_messages (id, ticket_id, sender_user_id, message) VALUES (?, ?, ?, ?)",
+    )
+    .bind(&message_id)
+    .bind(&ticket_id)
+    .bind(&user.id)
+    .bind(payload.message.trim())
+    .execute(&state.db)
+    .await
+    .map_err(|err| {
+        error!(error = %err, ticket_id = %ticket_id, user_id = %user.id, "failed to insert support message");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to reply ticket")
+    })?;
+
+    sqlx::query("UPDATE support_tickets SET status = 'open', updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        .bind(&ticket_id)
+        .execute(&state.db)
+        .await
+        .map_err(|err| {
+            error!(error = %err, ticket_id = %ticket_id, "failed to touch support ticket");
+            (StatusCode::INTERNAL_SERVER_ERROR, "failed to reply ticket")
+        })?;
+
+    let created = sqlx::query_as::<_, (String, Option<String>, String, String)>(
+        "SELECT id, sender_user_id, message, created_at FROM support_messages WHERE id = ? LIMIT 1",
+    )
+    .bind(&message_id)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|err| {
+        error!(error = %err, message_id = %message_id, "failed to load created support message");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to reply ticket")
+    })?;
+
+    Ok(Json(TicketMessageItem {
+        id: created.0,
+        sender_user_id: created.1,
+        message: created.2,
+        created_at: created.3,
+    }))
 }
 
 pub async fn admin_update_ticket_status(
@@ -129,8 +319,8 @@ pub async fn admin_update_ticket_status(
         )
     })?;
 
-    let item = sqlx::query_as::<_, (String, String, String, String, String)>(
-        "SELECT id, subject, category, priority, status FROM support_tickets WHERE id = ? LIMIT 1",
+    let item = sqlx::query_as::<_, (String, String, String, String, String, String)>(
+        "SELECT id, user_id, subject, category, priority, status FROM support_tickets WHERE id = ? LIMIT 1",
     )
     .bind(&ticket_id)
     .fetch_one(&state.db)
@@ -145,10 +335,11 @@ pub async fn admin_update_ticket_status(
 
     Ok(Json(TicketItem {
         id: item.0,
-        subject: item.1,
-        category: item.2,
-        priority: item.3,
-        status: item.4,
+        user_id: item.1,
+        subject: item.2,
+        category: item.3,
+        priority: item.4,
+        status: item.5,
     }))
 }
 
@@ -270,6 +461,57 @@ pub async fn admin_reply_ticket(
         message: created.2,
         created_at: created.3,
     }))
+}
+
+pub async fn close_ticket(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(ticket_id): Path<String>,
+) -> Result<StatusCode, (StatusCode, &'static str)> {
+    let user = auth::require_user(&headers, &state).await?;
+
+    let ticket_owner_id = sqlx::query_scalar::<_, String>(
+        "SELECT user_id FROM support_tickets WHERE id = ?"
+    )
+    .bind(&ticket_id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?
+    .ok_or((StatusCode::NOT_FOUND, "ticket not found"))?;
+
+    if ticket_owner_id != user.id {
+        return Err((StatusCode::FORBIDDEN, "access denied"));
+    }
+
+    sqlx::query("UPDATE support_tickets SET status = 'closed', updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        .bind(&ticket_id)
+        .execute(&state.db)
+        .await
+        .map_err(|err| {
+            error!(error = %err, ticket_id = %ticket_id, "failed to close support ticket");
+            (StatusCode::INTERNAL_SERVER_ERROR, "failed to close ticket")
+        })?;
+
+    Ok(StatusCode::OK)
+}
+
+pub async fn admin_close_ticket(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(ticket_id): Path<String>,
+) -> Result<StatusCode, (StatusCode, &'static str)> {
+    let _ = auth::require_admin(&headers, &state).await?;
+
+    sqlx::query("UPDATE support_tickets SET status = 'closed', updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        .bind(&ticket_id)
+        .execute(&state.db)
+        .await
+        .map_err(|err| {
+            error!(error = %err, ticket_id = %ticket_id, "failed to close support ticket");
+            (StatusCode::INTERNAL_SERVER_ERROR, "failed to close ticket")
+        })?;
+
+    Ok(StatusCode::OK)
 }
 
 fn is_valid_ticket_status(status: &str) -> bool {

@@ -20,6 +20,7 @@ pub struct InstanceItem {
     pub plan_id: String,
     pub status: String,
     pub os_template: String,
+    pub auto_renew: bool,
     pub root_password: Option<String>,
     pub created_at: String,
     pub nat_info: Vec<NatInfo>,
@@ -29,6 +30,43 @@ pub struct InstanceItem {
 pub struct NatInfo {
     pub ip: String,
     pub range: String,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateAutoRenewRequest {
+    pub auto_renew: bool,
+}
+
+pub async fn update_auto_renew(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(payload): Json<UpdateAutoRenewRequest>,
+) -> Result<Json<InstanceItem>, (StatusCode, &'static str)> {
+    let user = auth::require_user(&headers, &state).await?;
+
+    // Verify ownership
+    let exists = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM instances WHERE id = ? AND user_id = ?")
+        .bind(&id)
+        .bind(&user.id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "db error"))?;
+    if exists == 0 {
+        return Err((StatusCode::FORBIDDEN, "access denied"));
+    }
+
+    sqlx::query("UPDATE instances SET auto_renew = ? WHERE id = ?")
+        .bind(if payload.auto_renew { 1 } else { 0 })
+        .bind(&id)
+        .execute(&state.db)
+        .await
+        .map_err(|err| {
+            error!(error = %err, instance_id = %id, "failed to update auto_renew");
+            (StatusCode::INTERNAL_SERVER_ERROR, "failed to update settings")
+        })?;
+
+    get_instance(State(state), headers, Path(id)).await
 }
 
 #[derive(Deserialize, Serialize)]
@@ -91,8 +129,8 @@ pub async fn list_instances(
 ) -> Result<Json<Vec<InstanceItem>>, (StatusCode, &'static str)> {
     let user = auth::require_user(&headers, &state).await?;
 
-    let rows = sqlx::query_as::<_, (String, String, String, String, String, Option<String>, String)>(
-        "SELECT id, node_id, plan_id, status, os_template, root_password, created_at FROM instances WHERE user_id = ? AND status != 'deleted' ORDER BY created_at DESC",
+    let rows = sqlx::query_as::<_, (String, String, String, String, String, i64, Option<String>, String)>(
+        "SELECT id, node_id, plan_id, status, os_template, COALESCE(auto_renew, 0), root_password, created_at FROM instances WHERE user_id = ? AND status != 'deleted' ORDER BY created_at DESC",
     )
     .bind(&user.id)
     .fetch_all(&state.db)
@@ -105,7 +143,7 @@ pub async fn list_instances(
     let items = rows
         .into_iter()
         .map(
-            |(id, node_id, plan_id, status, os_template, root_password, created_at)| {
+            |(id, node_id, plan_id, status, os_template, auto_renew, root_password, created_at)| {
                 let status = match status.to_lowercase().as_str() {
                     "pending" => "pending",
                     "starting" => "starting",
@@ -121,6 +159,7 @@ pub async fn list_instances(
                     plan_id,
                     status: status.to_string(),
                     os_template,
+                    auto_renew: auto_renew != 0,
                     root_password,
                     created_at,
                     nat_info: vec![],
@@ -140,7 +179,7 @@ pub async fn get_instance(
     let user = auth::require_user(&headers, &state).await?;
 
     let row = sqlx::query(
-        "SELECT id, node_id, plan_id, status, os_template, root_password, created_at FROM instances WHERE id = ? AND user_id = ? LIMIT 1"
+        "SELECT id, node_id, plan_id, status, os_template, COALESCE(auto_renew, 0) as auto_renew, root_password, created_at FROM instances WHERE id = ? AND user_id = ? LIMIT 1"
     )
     .bind(&id)
     .bind(&user.id)
@@ -187,6 +226,7 @@ pub async fn get_instance(
         plan_id: row.get("plan_id"),
         status: row.get("status"),
         os_template: row.get("os_template"),
+        auto_renew: row.get::<i64, _>("auto_renew") != 0,
         root_password: row.get("root_password"),
         created_at: row.get("created_at"),
         nat_info,
