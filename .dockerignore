@@ -1,0 +1,10 @@
+target/
+.git/
+.venv/
+data/
+*.db
+*.db-*
+node_modules/
+.direnv/
+.vscode/
+.gemini/

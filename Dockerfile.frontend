@@ -1,0 +1,36 @@
+# Dockerfile.frontend
+FROM rust:1.80-slim AS builder
+
+WORKDIR /app
+COPY . .
+
+# 安装构建 WebAssembly 的目标
+RUN rustup target add wasm32-unknown-unknown
+
+# 安装所需构建依赖
+RUN apt-get update && apt-get install -y pkg-config libssl-dev xz-utils gcc curl wget
+
+# 安装 Dioxus CLI 工具
+RUN cargo install dioxus-cli --version 0.7.4
+
+# 编译前台界面和后台管理界面为 WASM
+# 禁用 wasm-opt 避免由于内存不足或版本兼容性导致的 OOM / 崩溃 (SIGABRT)
+ENV DX_NO_WASM_OPT=1
+RUN cd crates/frontend && dx build --release --platform web
+RUN cd crates/admin-frontend && dx build --release --platform web
+
+# -----------------
+# Nginx 托管阶段
+FROM nginx:alpine
+
+# 清理默认 Nginx 配置
+RUN rm -rf /usr/share/nginx/html/*
+
+# 拷贝构建出的静态产物
+COPY --from=builder /app/target/dx/frontend/release/web/public /usr/share/nginx/html/frontend
+COPY --from=builder /app/target/dx/admin-frontend/release/web/public /usr/share/nginx/html/admin
+
+# 覆盖自定义的 nginx 配置文件
+COPY nginx.conf /etc/nginx/nginx.conf
+
+# Nginx 将在 docker-compose 内部暴露相应端口
