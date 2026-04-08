@@ -213,6 +213,19 @@ async fn create_balance_checkout_internal(
             )
         })?;
 
+    // Create order as paid
+    sqlx::query(
+        "INSERT INTO orders (id, user_id, plan_id, status, total_amount, idempotency_key) VALUES (?, ?, ?, 'paid', ?, ?)",
+    )
+    .bind(order_id.to_string())
+    .bind(&user.id)
+    .bind(&plan.id)
+    .bind(amount)
+    .bind(Uuid::new_v4().to_string())
+    .execute(&mut *tx)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to create order"))?;
+
     // Log transaction
     let tx_id = Uuid::new_v4().to_string();
     let description = format!("Purchase {} ({})", plan.name, plan.code);
@@ -230,19 +243,6 @@ async fn create_balance_checkout_internal(
         error!(error = %err, user_id = %user.id, "failed to log purchase transaction");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to log transaction")
     })?;
-
-    // Create order as paid
-    sqlx::query(
-        "INSERT INTO orders (id, user_id, plan_id, status, total_amount, idempotency_key) VALUES (?, ?, ?, 'paid', ?, ?)",
-    )
-    .bind(order_id.to_string())
-    .bind(&user.id)
-    .bind(&plan.id)
-    .bind(amount)
-    .bind(Uuid::new_v4().to_string())
-    .execute(&mut *tx)
-    .await
-    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to create order"))?;
 
     // Create invoice as paid
     sqlx::query(
