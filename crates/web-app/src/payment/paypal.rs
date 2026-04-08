@@ -998,6 +998,45 @@ async fn finalize_paid_checkout(
             if plan_inventory_update.rows_affected() == 0 {
                 return Err((StatusCode::CONFLICT, "plan inventory unavailable"));
             }
+
+            let amount_f: f64 = record.amount.parse().unwrap_or(0.0);
+            if amount_f > 0.0 {
+                let plan_info = sqlx::query_as::<_, (String, String)>(
+                    "SELECT p.name, p.code FROM nat_plans p JOIN orders o ON o.plan_id = p.id WHERE o.id = ?",
+                )
+                .bind(order_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .unwrap_or(None)
+                .unwrap_or_else(|| ("Unknown".to_string(), "unknown".to_string()));
+
+                let recharge_tx_id = uuid::Uuid::new_v4().to_string();
+                let recharge_desc = format!("PayPal Payment (${})", record.amount);
+                sqlx::query(
+                    "INSERT INTO balance_transactions (id, user_id, amount, type, description) VALUES (?, ?, ?, 'recharge', ?)"
+                )
+                .bind(&recharge_tx_id)
+                .bind(user_id)
+                .bind(amount_f)
+                .bind(&recharge_desc)
+                .execute(&mut *tx)
+                .await
+                .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to log recharge transaction"))?;
+
+                let purchase_tx_id = uuid::Uuid::new_v4().to_string();
+                let purchase_desc = format!("Purchase {} ({})", plan_info.0, plan_info.1);
+                sqlx::query(
+                    "INSERT INTO balance_transactions (id, user_id, amount, type, description, order_id) VALUES (?, ?, ?, 'purchase', ?, ?)"
+                )
+                .bind(&purchase_tx_id)
+                .bind(user_id)
+                .bind(-amount_f)
+                .bind(&purchase_desc)
+                .bind(order_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to log purchase transaction"))?;
+            }
         }
     } else {
         // This is a recharge
