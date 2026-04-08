@@ -1,10 +1,8 @@
--- Add 'refunded' to OrderStatus
-PRAGMA defer_foreign_keys = ON;
-PRAGMA legacy_alter_table = ON;
+-- no-transaction
 
-ALTER TABLE orders RENAME TO old_orders;
+PRAGMA foreign_keys = OFF;
 
-CREATE TABLE orders (
+CREATE TABLE new_orders (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users (id),
     plan_id TEXT NOT NULL REFERENCES nat_plans (id),
@@ -20,8 +18,13 @@ CREATE TABLE orders (
     UNIQUE (idempotency_key)
 );
 
-INSERT INTO orders SELECT * FROM old_orders;
+INSERT INTO new_orders SELECT * FROM orders;
 
-DROP TABLE old_orders;
+DROP TABLE orders;
 
-PRAGMA legacy_alter_table = OFF;
+ALTER TABLE new_orders RENAME TO orders;
+
+-- Re-create indexes for orders
+CREATE INDEX idx_orders_user_status ON orders (user_id, status);
+
+PRAGMA foreign_keys = ON;
